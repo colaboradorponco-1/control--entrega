@@ -18,3 +18,12 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/* leaflet se apila con z-index internos muy altos (los controles llegan
+   a 1000). sin esto, el mapa se dibuja por encima de los modales, los
+   desplegables y el formulario. aislarlo en su propio contexto de
+   apilado lo deja siempre por debajo. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
+}

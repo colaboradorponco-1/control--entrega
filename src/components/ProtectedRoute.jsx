@@ -17,9 +17,11 @@ export default function ProtectedRoute({ children, rolesPermitidos }) {
   }
 
   const rolActual = perfil.roles?.nombre;
+  const esAdminPermitido = rolActual === 'superadmin'
+    && rolesPermitidos?.includes('administrador');
 
-  if (rolesPermitidos && !rolesPermitidos.includes(rolActual)) {
-    return <Navigate to="/login" replace />;
+  if (rolesPermitidos && !rolesPermitidos.includes(rolActual) && !esAdminPermitido) {
+    return <Navigate to="/panel" replace />;
   }
 
   return children;

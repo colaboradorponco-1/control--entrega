@@ -81,6 +81,13 @@ export default function MapaUbicacion({
   const onCambioRef = useRef(onCambio);
   onCambioRef.current = onCambio;
 
+  // cuando es editable y todavia no hay punto, se intenta tomar la
+  // ubicacion del dispositivo solo. si el usuario ya eligio otra cosa
+  // (tocando el mapa, buscando o con el boton de gps) no se pisa.
+  const valorInicial = useRef(valor);
+  const autoUbicacionHecha = useRef(false);
+  const eleccionManual = useRef(false);
+
   const [buscando, setBuscando] = useState(false);
   const [consulta, setConsulta] = useState('');
   const [resultados, setResultados] = useState([]);
@@ -132,6 +139,7 @@ export default function MapaUbicacion({
     // tocan el mapa para poner el pin. solo si es editable.
     if (onCambioRef.current) {
       m.on('click', (e) => {
+        eleccionManual.current = true;
         const punto = { lat: e.latlng.lat, longitude: e.latlng.lng };
         if (marcador.current) {
           marcador.current.setLatLng([punto.lat, punto.longitude]);
@@ -177,12 +185,34 @@ export default function MapaUbicacion({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valor?.lat, valor?.longitude]);
 
+  // Al abrir el formulario, marca la ubicacion del dispositivo sin
+  // que el usuario tenga que tocar nada. Solo la primera vez y solo
+  // si arranca vacio; cualquier eleccion manual tiene prioridad.
+  useEffect(() => {
+    if (!onCambioRef.current || valorInicial.current) return;
+    if (autoUbicacionHecha.current) return;
+    autoUbicacionHecha.current = true;
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (eleccionManual.current) return;
+        onCambioRef.current?.({
+          lat: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }, []);
+
   const usarMiUbicacion = () => {
     if (!navigator.geolocation) {
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        eleccionManual.current = true;
         const punto = { lat: pos.coords.latitude, longitude: pos.coords.longitude };
         onCambioRef.current?.(punto);
         mapa.current?.setView([punto.lat, punto.longitude], ZOOM_INICIAL);
@@ -241,6 +271,7 @@ export default function MapaUbicacion({
   };
 
   const elegirResultado = (punto) => {
+    eleccionManual.current = true;
     onCambioRef.current?.({ lat: punto.lat, longitude: punto.longitude });
     mapa.current?.setView([punto.lat, punto.longitude], ZOOM_INICIAL);
     setResultados([]);
@@ -291,6 +322,7 @@ export default function MapaUbicacion({
   };
 
   const quitar = () => {
+    eleccionManual.current = true;
     onCambioRef.current?.(null);
     setConsulta('');
   };

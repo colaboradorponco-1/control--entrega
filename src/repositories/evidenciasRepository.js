@@ -41,13 +41,12 @@ export const evidenciasRepository = {
 
   /** sube varias de una vez, y falla entero si alguna no se puede */
   async subirVarias(archivos) {
-    const resultado = {};
-    for (const [clave, archivo] of Object.entries(archivos)) {
-      if (!archivo) continue;
+    const entradas = Object.entries(archivos).filter(([, archivo]) => archivo);
+    const subidas = await Promise.all(entradas.map(async ([clave, archivo]) => {
       const { tipo, referencia } = archivo;
-      resultado[clave] = await this.subir(archivo.archivo, tipo, referencia);
-    }
-    return resultado;
+      return [clave, await this.subir(archivo.archivo, tipo, referencia)];
+    }));
+    return Object.fromEntries(subidas);
   },
 
   /**
@@ -55,12 +54,8 @@ export const evidenciasRepository = {
    * devuelve las rutas ya guardadas, en el mismo orden.
    */
   async subirFotosExtra(fotos, referencia) {
-    const rutas = [];
-    for (const foto of fotos || []) {
-      if (!foto) continue;
-      rutas.push(await this.subir(foto, 'extra', referencia));
-    }
-    return rutas;
+    const validas = (fotos || []).filter(Boolean);
+    return Promise.all(validas.map((foto) => this.subir(foto, 'extra', referencia)));
   },
 
   /** los archivos son privados: la base devuelve un enlace que expira */

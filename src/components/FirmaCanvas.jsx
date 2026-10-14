@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { PenLine, Eraser } from 'lucide-react';
 
 const ALTO = 190;
+const TEMA_VACIO = {};
 
 /**
  * firms someone with a finger on the glass.
  * works with mouse too, for when they use a computer.
  */
-export default function FirmaCanvas({ onCambio, theme = {}, titulo = 'Firma' }) {
+export default function FirmaCanvas({ onCambio, theme = TEMA_VACIO, titulo = 'Firma' }) {
   const canvasRef = useRef(null);
   const dibujando = useRef(false);
   const ultimoPunto = useRef(null);

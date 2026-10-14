@@ -1,44 +1,74 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { usuariosRepository } from '../../repositories/usuariosRepository';
 import { authRepository } from '../../repositories/AuthRepository';
+import { duenosRepository } from '../../repositories/duenosRepository';
 import {
   LogOut, Users, Sun, Moon, Plus, Pencil, Trash2, KeyRound, X,
-  Search, ArrowLeft, CheckCircle, AlertCircle, ShieldCheck, Store, UserCog, Loader2, Route
+  Search, ArrowLeft, CheckCircle, AlertCircle, ShieldCheck, Store, UserCog, Loader2, Route, Crown,
+  UserX, UserCheck
 } from 'lucide-react';
 
 const ROL_COLOR = {
+  superadmin: 'bg-fuchsia-500/10 text-fuchsia-500 border-fuchsia-500/20',
   administrador: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
   operador_planta: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
   despachador: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
   sucursal: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+  dueno: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
 };
 
 const ROL_LABEL = {
+  superadmin: 'Superadmin',
   administrador: 'Administrador',
   operador_planta: 'Operador Planta',
   despachador: 'Despachador',
   sucursal: 'Sucursal',
+  dueno: 'Dueño',
 };
 
 const RUTA_COLOR = {
   ESTE: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
   OESTE: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  NORTE: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
+  CENTRO: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  SUR: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
   PARTICULAR: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
 };
 
-const EMPTY_FORM = { nombre_completo: '', email: '', password: '', rol_id: '', nombre_sucursal: '', ruta: '' };
+const EMPTY_FORM = { nombre_completo: '', email: '', password: '', rol_id: '', nombre_sucursal: '', ruta: '', dueno_id: '' };
+
+const obtenerDatosUsuarios = async () => {
+  const [usuariosData, roles, sucursales] = await Promise.all([
+    usuariosRepository.listarUsuarios(),
+    usuariosRepository.listarRoles(),
+    usuariosRepository.listarSucursales(),
+  ]);
+  const correos = await usuariosRepository.listarCorreos();
+  const correoPorId = new Map(correos.map((cuenta) => [cuenta.id, cuenta.email]));
+  const usuarios = usuariosData.map((u) => ({
+    ...u,
+    email: correoPorId.get(u.usuario_id) || '',
+  }));
+
+  const duenos = await duenosRepository.disponible()
+    ? await duenosRepository.listarConSucursales(sucursales)
+    : [];
+
+  return { usuarios, roles, sucursales, duenos };
+};
 
 export default function GestionUsuarios() {
-  const { usuario } = useAuth();
+  const { usuario, perfil } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   const [usuarios, setUsuarios] = useState([]);
   const [roles, setRoles] = useState([]);
   const [sucursales, setSucursales] = useState([]);
+  const [duenos, setDuenos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [mensaje, setMensaje] = useState(null);
@@ -47,6 +77,7 @@ export default function GestionUsuarios() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editandoId, setEditandoId] = useState(null);
   const [nuevaPassword, setNuevaPassword] = useState('');
+  const esSuperadmin = perfil?.roles?.nombre === 'superadmin';
   const [enviando, setEnviando] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
@@ -61,30 +92,52 @@ export default function GestionUsuarios() {
   const tableHead = darkMode ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-gray-50 text-gray-600 border-gray-200';
   const rowHover = darkMode ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50';
 
-  const cargarDatos = async () => {
+  const cargarDatos = useCallback(async (mostrarCarga = false) => {
     try {
-      setCargando(true);
-      const [usuariosData, rolesData, sucursalesData] = await Promise.all([
-        usuariosRepository.listarUsuarios(),
-        usuariosRepository.listarRoles(),
-        usuariosRepository.listarSucursales(),
-      ]);
-      setUsuarios(usuariosData);
-      setRoles(rolesData);
-      setSucursales(sucursalesData);
+      if (mostrarCarga) setCargando(true);
+      const datos = await obtenerDatosUsuarios();
+      setUsuarios(datos.usuarios);
+      setRoles(datos.roles);
+      setSucursales(datos.sucursales);
+      setDuenos(datos.duenos);
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'Error al cargar los usuarios' });
     } finally {
       setCargando(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    cargarDatos();
+    let vigente = true;
+    obtenerDatosUsuarios()
+      .then((datos) => {
+        if (!vigente) return;
+        setUsuarios(datos.usuarios);
+        setRoles(datos.roles);
+        setSucursales(datos.sucursales);
+        setDuenos(datos.duenos);
+      })
+      .catch((err) => {
+        if (vigente) setMensaje({ tipo: 'error', texto: err.message || 'Error al cargar los usuarios' });
+      })
+      .finally(() => {
+        if (vigente) setCargando(false);
+      });
+
+    return () => {
+      vigente = false;
+    };
   }, []);
 
   const rolActual = roles.find((r) => String(r.id) === String(form.rol_id))?.nombre || '';
   const esRolSucursal = rolActual === 'sucursal';
+  const esRolDueno = rolActual === 'dueno';
+  const duenoSeleccionado = duenos.find(
+    (dueno) => String(dueno.id) === String(form.dueno_id)
+  );
+  const superadminExistente = usuarios.find(
+    (u) => u.roles?.nombre === 'superadmin' && u.id !== editandoId
+  );
   const rutasDisponibles = [...new Set(sucursales.map((s) => s.sector).filter(Boolean))].sort();
   const sucursalesDeRuta = form.ruta
     ? sucursales.filter((s) => s.sector === form.ruta)
@@ -95,11 +148,18 @@ export default function GestionUsuarios() {
     if (!q) return true;
     return (
       u.nombre_completo?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
       u.roles?.nombre?.toLowerCase().includes(q) ||
       u.sucursales?.nombre?.toLowerCase().includes(q) ||
       u.sucursales?.sector?.toLowerCase().includes(q)
     );
   });
+
+  const puedeGestionarUsuario = (u) => (
+    esSuperadmin
+    || !['administrador', 'superadmin'].includes(u.roles?.nombre)
+    || u.usuario_id === usuario?.id
+  );
 
   const abrirCrear = () => {
     setForm(EMPTY_FORM);
@@ -110,11 +170,13 @@ export default function GestionUsuarios() {
   const abrirEditar = (u) => {
     setForm({
       nombre_completo: u.nombre_completo || '',
-      email: '',
+      email: u.email || '',
       password: '',
       rol_id: u.rol_id || '',
       nombre_sucursal: u.sucursales?.nombre || '',
       ruta: u.sucursales?.sector || '',
+      // Para que aparezca ya elegido el dueño que tiene asignado
+      dueno_id: u.dueno_id || '',
     });
     setEditandoId(u.id);
     setModal('editar');
@@ -142,6 +204,24 @@ export default function GestionUsuarios() {
       setMensaje({ tipo: 'error', texto: 'Selecciona la ruta a la que pertenece el usuario' });
       return;
     }
+    if (rolActual === 'superadmin' && superadminExistente) {
+      setMensaje({
+        tipo: 'error',
+        texto: `Solo puede haber un Superadmin. Actualmente está asignado a "${superadminExistente.nombre_completo}".`,
+      });
+      return;
+    }
+    if (
+      !esSuperadmin
+      && ['administrador', 'superadmin'].includes(rolActual)
+      && usuarios.find((u) => u.id === editandoId)?.roles?.nombre !== rolActual
+    ) {
+      setMensaje({
+        tipo: 'error',
+        texto: 'Solo el Superadmin puede asignar o cambiar roles de administrador.',
+      });
+      return;
+    }
 
     setEnviando(true);
 
@@ -152,12 +232,15 @@ export default function GestionUsuarios() {
         : null;
 
       if (modal === 'crear') {
+        // La Edge Function guarda el dueno_id en el mismo upsert del
+        // perfil, asi que no hace falta un segundo update desde aca.
         await usuariosRepository.crearUsuario({
           email: form.email,
           password: form.password,
           nombre_completo: form.nombre_completo,
           rol_id: form.rol_id,
           sucursal_id: sucursal?.id || null,
+          dueno_id: esRolDueno && form.dueno_id ? Number(form.dueno_id) : null,
         });
 
         const extra = sucursal?.creada
@@ -169,15 +252,38 @@ export default function GestionUsuarios() {
           nombre_completo: form.nombre_completo,
           rol_id: form.rol_id,
           sucursal_id: sucursal?.id || null,
+          dueno_id: esRolDueno && form.dueno_id ? Number(form.dueno_id) : null,
         });
+        const usuarioEditado = usuarios.find((u) => u.id === editandoId);
+        let mensajeCorreo = '';
+        if (form.email.trim() !== (usuarioEditado?.email || '')) {
+          if (!usuarioEditado) {
+            throw new Error('No se encontró el usuario para actualizar su correo');
+          }
+          try {
+            const respuestaCorreo = await usuariosRepository.actualizarCorreo(
+              usuarioEditado.usuario_id,
+              form.email
+            );
+            mensajeCorreo = respuestaCorreo.mensaje || '';
+          } catch (errorCorreo) {
+            throw new Error(
+              `El perfil se guardó, pero no se pudo cambiar el correo: ${errorCorreo.message}`,
+              { cause: errorCorreo }
+            );
+          }
+        }
 
         const extra = sucursal?.creada
           ? ` La sucursal "${sucursal.nombre}" se creó en la ruta ${form.ruta}.`
           : '';
-        setMensaje({ tipo: 'exito', texto: `Usuario actualizado correctamente.${extra}` });
+        setMensaje({
+          tipo: 'exito',
+          texto: `Usuario actualizado correctamente.${extra} ${mensajeCorreo}`.trim(),
+        });
       }
       cerrarModal();
-      cargarDatos();
+      cargarDatos(true);
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'Error al guardar' });
     } finally {
@@ -213,9 +319,66 @@ export default function GestionUsuarios() {
     try {
       await usuariosRepository.eliminarUsuario(u.usuario_id);
       setMensaje({ tipo: 'exito', texto: `Usuario "${u.nombre_completo}" eliminado` });
-      cargarDatos();
+      cargarDatos(true);
     } catch (err) {
+      // La Edge Function responde con tiene_historial cuando el
+      // usuario tiene pedidos o despachos. Borrar a alguien con
+      // operaciones registradas rompería la trazabilidad, así que
+      // en ese caso se ofrece desactivar, que es lo correcto.
+      if (err.tiene_historial) {
+        const desactivar = window.confirm(
+          `${err.message}\n\n¿Desactivarlo ahora? Podés reactivarlo después.`
+        );
+
+        if (desactivar) {
+          setMensaje(null);
+          try {
+            await usuariosRepository.cambiarEstadoUsuario(u.usuario_id, false);
+            setMensaje({
+              tipo: 'exito',
+              texto: `"${u.nombre_completo}" quedó desactivado. Ya no puede entrar, y sus pedidos y firmas quedan intactos.`,
+            });
+            cargarDatos(true);
+          } catch (errDesact) {
+            setMensaje({
+              tipo: 'error',
+              texto: errDesact.message || 'No se pudo desactivar',
+            });
+          }
+        }
+        return;
+      }
+
       setMensaje({ tipo: 'error', texto: err.message || 'Error al eliminar' });
+    }
+  };
+
+  // Desactivar o reactivar sin pasar por el borrado. Un usuario
+  // desactivado conserva su historial y no puede iniciar sesión.
+  const handleCambiarEstado = async (u) => {
+    const activar = u.activo === false;
+    const confirmado = window.confirm(
+      activar
+        ? `¿Reactivar a "${u.nombre_completo}"? Va a poder volver a entrar al sistema.`
+        : `¿Desactivar a "${u.nombre_completo}"?\n\nVa a dejar de poder entrar, pero sus pedidos, despachos y firmas quedan como estaban.`
+    );
+    if (!confirmado) return;
+
+    setMensaje(null);
+    try {
+      await usuariosRepository.cambiarEstadoUsuario(u.usuario_id, activar);
+      setMensaje({
+        tipo: 'exito',
+        texto: activar
+          ? `"${u.nombre_completo}" quedó reactivado`
+          : `"${u.nombre_completo}" quedó desactivado`,
+      });
+      cargarDatos(true);
+    } catch (err) {
+      setMensaje({
+        tipo: 'error',
+        texto: err.message || 'No se pudo cambiar el estado',
+      });
     }
   };
 
@@ -225,7 +388,8 @@ export default function GestionUsuarios() {
       <div className={`flex flex-col md:flex-row justify-between items-start md:items-center p-4 md:p-6 rounded-2xl shadow mb-6 border gap-4 transition-colors duration-300 ${card}`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-wider mb-1">
-            <Users size={16} className="shrink-0" /> Administración de Usuarios
+            {esSuperadmin ? <Crown size={16} className="shrink-0" /> : <Users size={16} className="shrink-0" />}
+            {esSuperadmin ? 'Control exclusivo de Superadmin' : 'Administración de Usuarios'}
           </div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight break-words">Gestión de Usuarios</h1>
           <p className={`text-xs sm:text-sm mt-1 ${muted}`}>
@@ -241,7 +405,7 @@ export default function GestionUsuarios() {
             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
           <button
-            onClick={() => navigate('/admin')}
+            onClick={() => navigate('/panel')}
             className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold border transition ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
           >
             <ArrowLeft size={16} /> <span className="hidden sm:inline">Volver al Panel</span>
@@ -329,6 +493,7 @@ export default function GestionUsuarios() {
                             </div>
                             <div className="min-w-0">
                               <div className={`font-semibold truncate ${strong}`}>{u.nombre_completo}</div>
+                              <div className={`truncate text-xs ${muted}`}>{u.email || 'Correo no disponible'}</div>
                               {esYo && <div className="text-xs text-amber-500">Tu cuenta</div>}
                             </div>
                           </div>
@@ -355,6 +520,7 @@ export default function GestionUsuarios() {
                         </td>
                         <td className="p-3.5">
                           <div className="flex items-center justify-end gap-1.5">
+                            {puedeGestionarUsuario(u) ? <>
                             <button
                               onClick={() => abrirEditar(u)}
                               title="Editar"
@@ -370,13 +536,40 @@ export default function GestionUsuarios() {
                               <KeyRound size={15} />
                             </button>
                             <button
+                              onClick={() => handleCambiarEstado(u)}
+                              disabled={esYo && u.activo !== false}
+                              title={
+                                esYo && u.activo !== false
+                                  ? 'No podés desactivar tu propia cuenta'
+                                  : esYo
+                                    ? 'Reactivar tu cuenta'
+                                  : u.activo === false
+                                    ? 'Reactivar: volver a habilitar el acceso'
+                                    : 'Desactivar: quitar el acceso sin borrar su historial'
+                              }
+                              className={`p-2 rounded-lg transition disabled:opacity-30 disabled:cursor-not-allowed ${
+                                u.activo === false
+                                  ? 'bg-green-500/10 hover:bg-green-500/20 text-green-500'
+                                  : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-500'
+                              }`}
+                            >
+                              {u.activo === false ? <UserCheck size={15} /> : <UserX size={15} />}
+                            </button>
+                            <button
                               onClick={() => handleEliminar(u)}
                               disabled={esYo}
-                              title={esYo ? 'No puedes eliminar tu propia cuenta' : 'Eliminar'}
+                              title={
+                                esYo
+                                  ? 'No puedes eliminar tu propia cuenta'
+                                  : 'Eliminar de forma permanente'
+                              }
                               className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 transition disabled:opacity-30 disabled:cursor-not-allowed"
                             >
                               <Trash2 size={15} />
                             </button>
+                            </> : (
+                              <span className={`text-xs ${muted}`}>Solo Superadmin</span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -399,6 +592,7 @@ export default function GestionUsuarios() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className={`font-semibold ${strong} break-words`}>{u.nombre_completo}</div>
+                        <div className={`mt-0.5 break-all text-xs ${muted}`}>{u.email || 'Correo no disponible'}</div>
                         <span className={`mt-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg border inline-block ${ROL_COLOR[rol] || ROL_COLOR.administrador}`}>
                           {ROL_LABEL[rol] || rol}
                         </span>
@@ -420,6 +614,7 @@ export default function GestionUsuarios() {
                       </div>
                     )}
 
+                    {puedeGestionarUsuario(u) ? (
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={() => abrirEditar(u)}
@@ -434,6 +629,18 @@ export default function GestionUsuarios() {
                         <KeyRound size={14} /> Clave
                       </button>
                       <button
+                        onClick={() => handleCambiarEstado(u)}
+                        disabled={esYo && u.activo !== false}
+                        className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition disabled:opacity-30 disabled:cursor-not-allowed ${
+                          u.activo === false
+                            ? 'bg-green-500/10 hover:bg-green-500/20 text-green-500'
+                            : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-500'
+                        }`}
+                      >
+                        {u.activo === false ? <UserCheck size={14} /> : <UserX size={14} />}
+                        {u.activo === false ? 'Activar' : 'Desactivar'}
+                      </button>
+                      <button
                         onClick={() => handleEliminar(u)}
                         disabled={esYo}
                         className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-semibold transition disabled:opacity-30 disabled:cursor-not-allowed"
@@ -441,6 +648,9 @@ export default function GestionUsuarios() {
                         <Trash2 size={14} /> Borrar
                       </button>
                     </div>
+                    ) : (
+                      <p className={`text-xs ${muted}`}>La gestión de administradores está reservada al Superadmin.</p>
+                    )}
                   </div>
                 );
               })}
@@ -504,10 +714,12 @@ export default function GestionUsuarios() {
                   />
                 </div>
 
-                {modal === 'crear' && (
+                {(modal === 'crear' || modal === 'editar') && (
                   <>
                     <div>
-                      <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>Correo Electrónico *</label>
+                      <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
+                        {modal === 'crear' ? 'Correo Electrónico *' : 'Correo Electrónico'}
+                      </label>
                       <input
                         type="email"
                         required
@@ -516,7 +728,13 @@ export default function GestionUsuarios() {
                         placeholder="usuario@empresa.com"
                         className={`w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition ${input}`}
                       />
+                      {modal === 'editar' && (
+                        <p className={`mt-1.5 text-xs ${muted}`}>
+                          Supabase podría enviar un correo de confirmación a la nueva dirección.
+                        </p>
+                      )}
                     </div>
+                    {modal === 'crear' && (
                     <div>
                       <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>Contraseña *</label>
                       <input
@@ -529,6 +747,7 @@ export default function GestionUsuarios() {
                         className={`w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition ${input}`}
                       />
                     </div>
+                    )}
                   </>
                 )}
 
@@ -541,11 +760,106 @@ export default function GestionUsuarios() {
                     className={`w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition ${input}`}
                   >
                     <option value="">Seleccione un rol...</option>
-                    {roles.map((r) => (
-                      <option key={r.id} value={r.id}>{ROL_LABEL[r.nombre] || r.nombre}</option>
+                    {roles
+                      .filter((r) => (
+                        esSuperadmin
+                        || !['administrador', 'superadmin'].includes(r.nombre)
+                        || String(r.id) === String(form.rol_id)
+                      ))
+                      .map((r) => (
+                      <option
+                        key={r.id}
+                        value={r.id}
+                        disabled={
+                          (!esSuperadmin && ['administrador', 'superadmin'].includes(r.nombre))
+                          || (r.nombre === 'superadmin' && Boolean(superadminExistente))
+                        }
+                      >
+                        {ROL_LABEL[r.nombre] || r.nombre}
+                        {r.nombre === 'superadmin' && superadminExistente ? ' (ya asignado)' : ''}
+                      </option>
                     ))}
                   </select>
+                  {superadminExistente && (
+                    <p className={`mt-2 text-xs ${muted}`}>
+                      Superadmin ya asignado a {superadminExistente.nombre_completo}. Cambia primero ese rol para transferirlo.
+                    </p>
+                  )}
+                  {!esSuperadmin && (
+                    <p className={`mt-2 text-xs ${muted}`}>
+                      Solo el Superadmin puede crear, editar o asignar cuentas de administrador.
+                    </p>
+                  )}
                 </div>
+
+                {esRolDueno && (
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${label}`}>
+                      <Crown size={14} className="text-rose-500 shrink-0" /> Dueño *
+                    </label>
+                    {duenos.length ? (
+                      <select
+                        required
+                        value={form.dueno_id}
+                        onChange={(e) => setForm({ ...form, dueno_id: e.target.value })}
+                        className={`w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition ${input}`}
+                      >
+                        <option value="">Seleccione el dueño</option>
+                        {duenos.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            {d.nombre}
+                            {d.sucursales?.length
+                              ? ` · ${d.sucursales.length} sucursal${d.sucursales.length === 1 ? '' : 'es'}`
+                              : ' · sin sucursales asignadas'}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className={`p-4 border rounded-xl text-sm ${darkMode ? 'bg-amber-950/30 border-amber-500/30 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                        Todavía no hay dueños registrados. Creá uno primero en el apartado
+                        <strong> Dueños</strong> del panel de administración, o corré
+                        <code className="mx-1">supabase/DUENOS-PARTE1.sql</code> a{' '}
+                        <code className="mx-1">PARTE3</code> en Supabase.
+                      </div>
+                    )}
+                    {duenoSeleccionado && (
+                      <div className={`mt-3 rounded-xl border p-3 ${
+                        darkMode
+                          ? 'border-rose-900/50 bg-rose-950/20'
+                          : 'border-rose-200 bg-rose-50'
+                      }`}>
+                        <p className={`text-xs font-bold ${strong}`}>
+                          Sucursales de {duenoSeleccionado.nombre}
+                        </p>
+                        {duenoSeleccionado.sucursales?.length ? (
+                          <ul className="mt-2 flex flex-wrap gap-2">
+                            {duenoSeleccionado.sucursales.map((sucursal) => (
+                              <li
+                                key={sucursal.id}
+                                className={`rounded-lg border px-2.5 py-1.5 text-xs ${
+                                  darkMode
+                                    ? 'border-slate-700 bg-slate-900 text-slate-200'
+                                    : 'border-gray-200 bg-white text-gray-700'
+                                }`}
+                              >
+                                <span className="font-semibold">{sucursal.nombre}</span>
+                                {sucursal.sector && <span className={`ml-1 ${muted}`}>· {sucursal.sector}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className={`mt-1 text-xs ${muted}`}>
+                            Este dueño todavía no tiene sucursales asignadas. Asígnalas primero en Dueños.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    <p className={`text-xs mt-2 ${muted}`}>
+                      El dueño ve los pedidos de todas sus sucursales, pero solo puede mirar:
+                      no registra ni modifica nada.
+                    </p>
+                  </div>
+                )}
 
                 {esRolSucursal && (
                   <div>

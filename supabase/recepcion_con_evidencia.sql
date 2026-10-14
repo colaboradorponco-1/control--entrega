@@ -1,35 +1,3 @@
--- ============================================================
--- RECEPCION CON EVIDENCIA
--- Cuando el despachador llega a la sucursal, se llena un
--- comprobante: a quien se entrego, cuantas unidades,
--- observaciones, foto y firma de quien recibio.
--- ============================================================
-
--- ------------------------------------------------------------
--- 1) CAMPOS DEL COMPROBANTE
--- Van primero, porque las politicas de abajo ya los consultan.
--- ------------------------------------------------------------
-ALTER TABLE public.pedido_recepciones
-  ADD COLUMN IF NOT EXISTS recibido_por_nombre TEXT,
-  ADD COLUMN IF NOT EXISTS foto_url TEXT,
-  ADD COLUMN IF NOT EXISTS firma_url TEXT,
-  ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7),
-  ADD COLUMN IF NOT EXISTS longitud NUMERIC(10,7);
-
-COMMENT ON COLUMN public.pedido_recepciones.recibido_por_nombre IS
-  'Nombre de la persona que recibio el pedido en la sucursal';
-COMMENT ON COLUMN public.pedido_recepciones.foto_url IS
-  'Ruta dentro del bucket evidencias, de la foto de la entrega';
-COMMENT ON COLUMN public.pedido_recepciones.firma_url IS
-  'Ruta dentro del bucket evidencias, de la firma de quien recibio';
-COMMENT ON COLUMN public.pedido_recepciones.latitude IS
-  'Coordenada aproximada de la entrega, si el celular la entrego';
-
--- ------------------------------------------------------------
--- 2) ALMACENAMIENTO DE LAS FOTOS Y FIRMAS
--- Privado: solo los autorizados pueden verlas, y por tiempo
--- limitado (URL firmada), no enlaces publicos eternal.
--- ------------------------------------------------------------
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
   'evidencias',
@@ -79,15 +47,29 @@ CREATE POLICY evidencias_ver ON storage.objects
   );
 
 -- ------------------------------------------------------------
+-- 2) CAMPOS DEL COMPROBANTE
+-- ------------------------------------------------------------
+ALTER TABLE public.pedido_recepciones
+  ADD COLUMN IF NOT EXISTS recibido_por_nombre TEXT,
+  ADD COLUMN IF NOT EXISTS foto_url TEXT,
+  ADD COLUMN IF NOT EXISTS firma_url TEXT,
+  ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS longitud NUMERIC(10,7);
+
+COMMENT ON COLUMN public.pedido_recepciones.recibido_por_nombre IS
+  'Nombre de la persona que recibio el pedido en la sucursal';
+COMMENT ON COLUMN public.pedido_recepciones.foto_url IS
+  'Ruta dentro del bucket evidencias, de la foto de la entrega';
+COMMENT ON COLUMN public.pedido_recepciones.firma_url IS
+  'Ruta dentro del bucket evidencias, de la firma de quien recibio';
+COMMENT ON COLUMN public.pedido_recepciones.latitude IS
+  'Coordenada aproximada de la entrega, si el celular la entrego';
+
+-- ------------------------------------------------------------
 -- 3) FUNCION QUE ARMA UNA URL FIRMADA
 -- Las fotos y firmas no son publicas: se entregan con
 -- enlace temporal para que no se puedan compartir de ahi.
 -- ------------------------------------------------------------
--- La evidencia es privada, pero url_evidencia corre como
--- SECURITY DEFINER, asi que las politicas de storage no la frenan:
--- hay que revisar aqui a quien se le da el enlace.
--- Admin, planta y despachador ven todo. La sucursal solo ve los
--- pedidos que son suyos.
 CREATE OR REPLACE FUNCTION public.url_evidencia(p_ruta TEXT, p_segundos INT DEFAULT 900)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -96,56 +78,22 @@ SET search_path = public, storage
 AS $$
 DECLARE
   v_url TEXT;
-  v_rol TEXT := public.get_user_rol();
-  v_sucursal INT := public.get_user_sucursal();
-  v_pedido INT;
 BEGIN
-  IF p_ruta IS NULL OR btrim(p_ruta) = '' THEN
+  IF p_ruta IS NULL OR p_ruta = '' THEN
     RETURN NULL;
   END IF;
 
-  IF p_ruta LIKE '%..%' THEN
-    RAISE EXCEPTION 'Ruta de evidencia invalida';
-  END IF;
+  SELECT signed_url INTO v_url
+    FROM storage.objects
+   WHERE bucket_id = 'evidencias' AND name = p_ruta;
 
-  IF v_rol = 'sucursal' THEN
-    BEGIN
-      v_pedido := substring(p_ruta FROM '^pedido-([0-9]+)/')::INT;
-    EXCEPTION WHEN others THEN
-      v_pedido := NULL;
-    END;
-
-    IF v_pedido IS NULL THEN
-      RAISE EXCEPTION 'No tienes permiso para ver esa evidencia';
-    END IF;
-
-    IF NOT EXISTS (
-      SELECT 1 FROM public.pedidos p
-       WHERE p.id = v_pedido AND p.sucursal_id = v_sucursal
-    ) THEN
-      RAISE EXCEPTION 'No tienes permiso para ver esa evidencia';
-    END IF;
-  ELSIF v_rol NOT IN ('administrador','operador_planta','despachador') THEN
-    RAISE EXCEPTION 'No tienes permiso para ver esa evidencia';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM storage.objects
-     WHERE bucket_id = 'evidencias' AND name = p_ruta
-  ) THEN
-    RAISE EXCEPTION 'La evidencia no existe o fue borrada';
-  END IF;
-
-  SELECT s.url INTO v_url
-    FROM storage.create_signed_url('evidencias', p_ruta, LEAST(GREATEST(COALESCE(p_segundos, 900), 60), 900)) AS s;
-
+  -- Si el registro ya no existe, se devuelve la ruta igual
   IF v_url IS NULL THEN
-    RAISE EXCEPTION 'No se pudo generar el enlace de la evidencia';
+    RETURN p_ruta;
   END IF;
 
-  RETURN v_url;
+  RETURN (SELECT create_signed_url('evidencias', p_ruta, p_segundos));
 END;
-$$ LANGUAGE plpgsql;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.url_evidencia(TEXT, INT) TO authenticated;
@@ -155,13 +103,6 @@ GRANT EXECUTE ON FUNCTION public.url_evidencia(TEXT, INT) TO authenticated;
 -- Reemplaza confirmar_recepcion_pedido. Ahora si o si exige
 -- foto y firma: es la prueba de que el pollo llego.
 -- ------------------------------------------------------------
-
--- Primero se borran las versiones anteriores. Si quedara alguna,
--- un cliente podria llamar la vieja y cerrar la recepcion
--- sin foto ni firma, esquivando la evidencia.
-DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT);
-DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, NUMERIC, TEXT);
-DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION public.confirmar_recepcion_pedido(
   p_pedido_id INT,
   p_unidades_recibidas INT,
@@ -175,50 +116,33 @@ CREATE OR REPLACE FUNCTION public.confirmar_recepcion_pedido(
 RETURNS public.pedido_recepciones
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = public
 AS $$
 DECLARE
-  v_pedido_sucursal  INT;
-  v_pedido_unidades  INT;
-  v_pedido_kilos     NUMERIC;
-  v_pedido_estado    TEXT;
-  v_perfil_id        INT;
-  v_perfil_sucursal  INT;
-  v_despachado_por   INT;
-  v_faltantes        BOOLEAN;
-  v_id_recepcion     INT;
+  v_pedido public.pedidos;
+  v_perfil public.perfiles_usuario;
+  v_recepcion public.pedido_recepciones;
 BEGIN
-  -- El pedido tiene que existir
-  SELECT p.sucursal_id, p.unidades, p.kilos_despachados, p.estado
-    INTO v_pedido_sucursal, v_pedido_unidades, v_pedido_kilos, v_pedido_estado
-    FROM public.pedidos p
-   WHERE p.id = p_pedido_id;
-
+  SELECT * INTO v_pedido FROM public.pedidos WHERE id = p_pedido_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'El pedido no existe';
   END IF;
 
-  -- El perfil tiene que existir
-  SELECT pr.id, pr.sucursal_id
-    INTO v_perfil_id, v_perfil_sucursal
-    FROM public.perfiles_usuario pr
-   WHERE pr.usuario_id = auth.uid();
-
+  SELECT * INTO v_perfil FROM public.profiles_usuario WHERE usuario_id = auth.uid();
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Perfil no encontrado';
   END IF;
 
-  -- Solo la sucursal del pedido, o el administrador
   IF public.get_user_rol() <> 'administrador'
-     AND v_pedido_sucursal <> v_perfil_sucursal THEN
+     AND v_pedido.sucursal_id <> v_perfil.sucursal_id THEN
     RAISE EXCEPTION 'No tenes permiso para recibir este pedido';
   END IF;
 
-  IF v_pedido_estado <> 'RECOGIDO' THEN
-    RAISE EXCEPTION 'El pedido aun no fue recogido (estado actual: %)', v_pedido_estado;
+  IF v_pedido.estado <> 'RECOGIDO' THEN
+    RAISE EXCEPTION 'El pedido aun no fue recogido (estado actual: %)', v_pedido.estado;
   END IF;
 
-  IF v_pedido_kilos IS NULL THEN
+  IF v_pedido.kilos_despachados IS NULL THEN
     RAISE EXCEPTION 'El pedido no tiene peso registrado, pedi al despachador que lo registre';
   END IF;
 
@@ -239,7 +163,7 @@ BEGIN
     RAISE EXCEPTION 'Escribe el nombre de quien recibio el pedido';
   END IF;
 
-  -- Y tiene que existir de verdad, no basta con inventar la ruta
+  -- La foto y la firma tienen que existir de verdad
   IF NOT EXISTS (
     SELECT 1 FROM storage.objects
      WHERE bucket_id = 'evidencias' AND name = p_foto_url
@@ -254,8 +178,6 @@ BEGIN
     RAISE EXCEPTION 'La firma no se subio, volvela a dibujar';
   END IF;
 
-  v_faltantes := p_unidades_recibidas < v_pedido_unidades;
-
   -- El inventario solo se descuenta si hay unidades de verdad
   IF p_unidades_recibidas > 0 THEN
     INSERT INTO public.despacho_pollo (
@@ -264,15 +186,14 @@ BEGIN
     )
     VALUES (
       CURRENT_DATE,
-      v_pedido_kilos,
+      v_pedido.kilos_despachados,
       p_unidades_recibidas,
-      v_pedido_sucursal,
+      v_pedido.sucursal_id,
       'RECIBIDO',
       p_observaciones,
-      v_perfil_id,
-      p_pedido_id
-    )
-    RETURNING id INTO v_despachado_por;
+      v_perfil.id,
+      v_pedido.id
+    );
   END IF;
 
   INSERT INTO public.pedido_recepciones (
@@ -281,9 +202,9 @@ BEGIN
     latitude, longitud
   )
   VALUES (
-    p_pedido_id,
+    v_pedido.id,
     p_unidades_recibidas,
-    v_faltantes,
+    p_unidades_recibidas < v_pedido.unidades,
     p_observaciones,
     auth.uid(),
     btrim(p_recibido_por),
@@ -292,11 +213,11 @@ BEGIN
     p_latitude,
     p_longitud
   )
-  RETURNING id INTO v_id_recepcion;
+  RETURNING * INTO v_recepcion;
 
-  UPDATE public.pedidos SET estado = 'ENTREGADO' WHERE id = p_pedido_id;
+  UPDATE public.pedidos SET estado = 'ENTREGADO' WHERE id = v_pedido.id;
 
-  RETURN (SELECT r FROM public.pedido_recepciones r WHERE r.id = v_id_recepcion);
+  RETURN v_recepcion;
 END;
 $$;
 

@@ -1,70 +1,14 @@
--- ============================================================================
---  PENDIENTES: EJECUTAR ESTE ARCHIVO UNA SOLA VEZ
--- ============================================================================
---  Todo lo que falta aplicar, en el orden correcto.
---
---  1. Peso real que anota el despachador al recoger
---  2. Comprobante de entrega: receptor, foto y firma
---  3. Correccion del inventario (kilos_iniciales en NULL)
---  4. La sucursal ya no altera kilos del despacho
---
---  No borra pedidos, sucursales ni usuarios. Se puede volver a correr.
--- ============================================================================
-
--- ############################################################################
---  1) pedidos_sin_kilos.sql
--- ############################################################################
--- ============================================================
--- PEDIDOS SOLO EN UNIDADES
---
--- El pedido se pide por unidades, no por kilos. Pero el inventario
--- de la planta se lleva en kilos, asi que el peso real que sale
--- de la planta lo anota el DESPACHADOR al recoger el pedido.
---
--- La sucursal, al recibir, cuenta unicamente las unidades.
---
--- Ejecutar en Supabase > SQL Editor
--- ============================================================
-
--- ------------------------------------------------------------
--- 1) EL PEDIDO PASA A SER SOLO EN UNIDADES
--- El orden importa: primero se agrega la columna nueva y se
--- copia el peso viejo, recien ahi se borra la vieja. Al reves
--- se pierde el peso de los pedidos que ya existian.
--- ------------------------------------------------------------
-ALTER TABLE public.pedidos
-  ADD COLUMN IF NOT EXISTS kilos_despachados NUMERIC(10,2);
-
--- Se apaga el trigger un momento: durante la migracion el peso
--- si se esta moviendo, y el trigger lo prohibe por diseÃ±o.
-ALTER TABLE public.pedidos DISABLE TRIGGER t_pedidos_guardar;
-
-DO $$
-BEGIN
-  -- Solo si la columna vieja todavia existe
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-     WHERE table_schema = 'public'
-       AND table_name  = 'pedidos'
-       AND column_name = 'kilos'
-  ) THEN
-    EXECUTE 'UPDATE public.pedidos
-                SET kilos_despachados = kilos
-              WHERE kilos_despachados IS NULL';
-  END IF;
-END $$;
-
-ALTER TABLE public.pedidos ENABLE TRIGGER t_pedidos_guardar;
 
 ALTER TABLE public.pedidos
   DROP COLUMN IF EXISTS kilos;
 
+ALTER TABLE public.pedidos
+  ADD COLUMN IF NOT EXISTS kilos_despachados NUMERIC(10,2);
+
 ALTER TABLE public.pedido_recepciones
   DROP COLUMN IF EXISTS kilos_recibidas;
 
--- ------------------------------------------------------------
--- 2) RECOGER EL PEDIDO (el despachador anota el peso real)
--- ------------------------------------------------------------
+
 DROP FUNCTION IF EXISTS public.recoger_pedido(INT, NUMERIC);
 
 CREATE OR REPLACE FUNCTION public.recoger_pedido(
@@ -104,9 +48,6 @@ BEGIN
 END;
 $$;
 
--- ------------------------------------------------------------
--- 3) RECEPCION: la sucursal cuenta unidades, nada mas
--- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, NUMERIC, TEXT);
 
 CREATE OR REPLACE FUNCTION public.confirmar_recepcion_pedido(
@@ -145,8 +86,6 @@ BEGIN
     RAISE EXCEPTION 'Las unidades recibidas no pueden ser negativas';
   END IF;
 
-  -- El peso sale de lo que peso el despachador, no de lo que
-  -- escribio la sucursal. Las unidades si las cuenta la sucursal.
   IF p_unidades_recibidas > 0 THEN
     INSERT INTO public.despacho_pollo (
       fecha, kilos, unidades, sucursal_id, estado_recepcion,
@@ -242,6 +181,7 @@ SELECT id, unidades, estado, kilos_despachados FROM public.pedidos ORDER BY id;
 -- ############################################################################
 --  2) recepcion_con_evidencia.sql
 -- ############################################################################
+
 -- ============================================================
 -- RECEPCION CON EVIDENCIA
 -- Cuando el despachador llega a la sucursal, se llena un
@@ -543,6 +483,7 @@ SELECT id, pedido_id, unidades_recibidas, recibido_por_nombre,
 -- ############################################################################
 --  3) arreglo_inventario.sql
 -- ############################################################################
+
 -- ============================================================
 -- ARREGLO DEL INVENTARIO DIARIO
 --
@@ -698,6 +639,7 @@ ORDER BY fecha;
 -- ############################################################################
 --  4) arreglo_rls.sql
 -- ############################################################################
+
 -- ============================================================
 -- CIERRE DE SEGURIDAD: la sucursal solo confirma la entrega
 --
@@ -771,3 +713,4 @@ GRANT EXECUTE ON FUNCTION public.confirmar_entrega_despacho(INT, TEXT) TO authen
 -- ############################################################################
 --  FIN
 -- ############################################################################
+

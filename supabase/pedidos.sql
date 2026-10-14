@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.pedidos (
   -- Sin el, el inventario de la planta no podria descontarse en kilos.
   kilos_despachados NUMERIC(10,2),
   estado TEXT NOT NULL DEFAULT 'PENDIENTE'
-    CHECK (estado IN ('PENDIENTE','EN_PREPARACION','LISTO','RECOGIDO','ENTREGADO','CANCELADO')),
+    CHECK (estado IN ('PENDIENTE','APROBADO','EN_PREPARACION','LISTO','RECOGIDO','ENTREGADO','CANCELADO')),
   observaciones TEXT,
   creado_por UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -383,7 +383,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.pedidos TO authenticated;
 GRANT SELECT ON public.pedido_recepciones TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE public.pedidos_id_seq TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE public.pedido_recepciones_id_seq TO authenticated;
-GRANT EXECUTE ON FUNCTION public.confirmar_recepcion_pedido(INT, INT, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.confirmar_recepcion_pedido(
+  INT, INT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC
+) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.recoger_pedido(INT, NUMERIC) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

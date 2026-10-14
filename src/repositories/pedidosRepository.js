@@ -14,7 +14,7 @@ const CAMPOS_PEDIDO_SIN_EVIDENCIA = `
   observaciones,
   creado_en,
   actualizado_en,
-  sucursales ( nombre, sector )
+  sucursales ( nombre, sector, latitude, longitude )
 `;
 
 const CAMPOS_PEDIDO_COMPLETO = `
@@ -27,13 +27,15 @@ const CAMPOS_PEDIDO_COMPLETO = `
   observaciones,
   creado_en,
   actualizado_en,
-  sucursales ( nombre, sector ),
+  sucursales ( nombre, sector, latitude, longitude ),
   pedido_recepciones (
     unidades_recibidas,
     faltantes,
     observaciones,
     recibido_por_nombre,
     recibido_en,
+    observaciones_entrega,
+    observaciones_entrega_en,
     foto_url,
     firma_url,
     fotos_extra
@@ -41,6 +43,65 @@ const CAMPOS_PEDIDO_COMPLETO = `
 `;
 
 export const pedidosRepository = {
+  async obtenerDisponibilidadPedidosPlanta() {
+    const { data, error } = await supabase.rpc('obtener_disponibilidad_pedidos_planta');
+    if (error) throw error;
+    return data?.[0] || {
+      unidades_stock: 0,
+      unidades_reservadas: 0,
+      unidades_disponibles: 0,
+      kilos_stock: 0,
+    };
+  },
+
+  async listarSucursalesParaPedidoDueno() {
+    const { data, error } = await supabase.rpc('listar_sucursales_pedido_dueno');
+    if (error) throw error;
+    return data || [];
+  },
+
+  async crearParaDueno({ sucursalId, unidades, fecha, observaciones }) {
+    const sucursalIdNumerico = Number(sucursalId);
+    const unidadesNumericas = Number(unidades);
+    if (!Number.isInteger(sucursalIdNumerico) || sucursalIdNumerico <= 0) {
+      throw new Error('Selecciona una sucursal válida para el pedido.');
+    }
+    if (!Number.isInteger(unidadesNumericas) || unidadesNumericas <= 0) {
+      throw new Error('Las unidades deben ser un número entero mayor que cero.');
+    }
+
+    const { data, error } = await supabase.rpc('crear_pedido_dueno', {
+      p_sucursal_id: sucursalIdNumerico,
+      p_unidades: unidadesNumericas,
+      p_fecha: fecha,
+      p_observaciones: observaciones?.trim() || null,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async enviarObservacionesEntrega(pedidoId, observaciones) {
+    const { data, error } = await supabase.rpc('enviar_observaciones_entrega_pedido', {
+      p_pedido_id: pedidoId,
+      p_observaciones: observaciones.trim(),
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async guardarUbicacionRepartidor({ pedidoId, despachadorId, latitude, longitude, precisionM }) {
+    const { error } = await supabase
+      .from('seguimiento_pedidos')
+      .upsert({
+        pedido_id: pedidoId,
+        despachador_id: despachadorId,
+        latitude,
+        longitude,
+        precision_m: precisionM,
+      }, { onConflict: 'pedido_id' });
+    if (error) throw error;
+  },
+
   // Listar pedidos visibles para el usuario (RLS ya filtra por rol)
   async listar({ estados } = {}) {
     const consultar = async (campos) => {
@@ -64,26 +125,31 @@ export const pedidosRepository = {
     }
 
     if (error) throw error;
-    return data || [];
-  },
 
-  // Crear un pedido desde la sucursal. Solo unidades.
-  // La sucursal y el autor los completa la base de datos; no se envian.
-  async crear({ unidades, fecha, observaciones }) {
-    const { data, error } = await supabase
-      .from('pedidos')
-      .insert([
-        {
-          unidades: Number(unidades),
-          fecha: fecha || new Date().toISOString().split('T')[0],
-          observaciones: observaciones?.trim() || null,
-        },
-      ])
-      .select()
-      .single();
+    const pedidos = data || [];
+    if (!pedidos.length) return pedidos;
 
-    if (error) throw error;
-    return data;
+    const { data: historial, error: historialError } = await supabase
+      .from('pedido_estado_historial')
+      .select('id, pedido_id, estado, cambiado_en, cambiado_por_nombre')
+      .in('pedido_id', pedidos.map((pedido) => pedido.id))
+      .order('cambiado_en', { ascending: true });
+
+    if (historialError) {
+      throw new Error(`No se pudo cargar el historial de pedidos: ${historialError.message}`);
+    }
+
+    const historialPorPedido = new Map();
+    for (const evento of historial || []) {
+      const eventos = historialPorPedido.get(evento.pedido_id) || [];
+      eventos.push(evento);
+      historialPorPedido.set(evento.pedido_id, eventos);
+    }
+
+    return pedidos.map((pedido) => ({
+      ...pedido,
+      historial_estado: historialPorPedido.get(pedido.id) || [],
+    }));
   },
 
   // Registrar la salida del pollo hacia la sucursal.
@@ -92,8 +158,10 @@ export const pedidosRepository = {
   async despachar(pedidoId, datos) {
     const {
       unidades, kilos, precio_por_kilo, transportista,
-      entregado_por, observaciones, foto, firma, fotosExtra,
+      entregado_por, observaciones, foto, firma, fotosExtra, ubicacion,
     } = datos;
+
+    console.log('[DEBUG despacho] ubicacion recibida:', ubicacion);
 
     const rutas = await evidenciasRepository.subirVarias({
       foto: foto && { archivo: foto, tipo: 'foto', referencia: `pedido-${pedidoId}` },
@@ -113,6 +181,8 @@ export const pedidosRepository = {
       p_entregado_por: entregado_por?.trim() || null,
       p_observaciones: observaciones?.trim() || null,
       p_fotos_extra: rutasExtra,
+      p_latitude: ubicacion?.lat ?? null,
+      p_longitud: ubicacion?.longitude ?? null,
     });
 
     if (error) throw error;
@@ -142,6 +212,8 @@ export const pedidosRepository = {
   async confirmarRecepcion(pedidoId, datos) {
     const { unidades_recibidas, observaciones, recibido_por, foto, firma, ubicacion, fotosExtra } = datos;
 
+    console.log('[DEBUG entrega] ubicacion recibida:', ubicacion);
+
     // Primero suben las pruebas, y recien despues se confirma.
     // Si el confirmarse falla, quedan huerfanas pero el pedido
     // sigue abierto, que es lo importante.
@@ -154,7 +226,7 @@ export const pedidosRepository = {
       });
       rutasExtra = await evidenciasRepository.subirFotosExtra(fotosExtra, `pedido-${pedidoId}`);
     } catch (err) {
-      throw new Error('No se pudo subir la evidencia: ' + (err.message || 'revisa tu conexión'));
+      throw new Error('No se pudo subir la evidencia: ' + (err.message || 'revisa tu conexión'), { cause: err });
     }
 
     const { data, error } = await supabase.rpc('confirmar_recepcion_pedido', {
@@ -164,7 +236,7 @@ export const pedidosRepository = {
       p_firma_url: rutas.firma ?? null,
       p_recibido_por: recibido_por?.trim() || null,
       p_observaciones: observaciones?.trim() || null,
-      p_latitude: ubicacion?.latitude ?? null,
+      p_latitude: ubicacion?.lat ?? null,
       p_longitud: ubicacion?.longitude ?? null,
       p_fotos_extra: rutasExtra,
     });
