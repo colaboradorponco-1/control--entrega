@@ -2,9 +2,6 @@ import { supabase } from '../config/supabaseClient';
 import { evidenciasRepository } from './evidenciasRepository';
 import { esColumnaFaltante } from './columnaFalta';
 
-// Sin evidencia: para cuando la base todavia no tiene las columnas
-// nuevas. No pide nada de pedido_recepciones, asi que nunca puede
-// volver a fallar por las fotos.
 const CAMPOS_PEDIDO_SIN_EVIDENCIA = `
   id,
   sucursal_id,
@@ -24,6 +21,7 @@ const CAMPOS_PEDIDO_COMPLETO = `
   unidades,
   kilos_despachados,
   estado,
+  motivo_rechazo,
   observaciones,
   creado_en,
   actualizado_en,
@@ -34,8 +32,6 @@ const CAMPOS_PEDIDO_COMPLETO = `
     observaciones,
     recibido_por_nombre,
     recibido_en,
-    observaciones_entrega,
-    observaciones_entrega_en,
     foto_url,
     firma_url,
     fotos_extra
@@ -43,6 +39,81 @@ const CAMPOS_PEDIDO_COMPLETO = `
 `;
 
 export const pedidosRepository = {
+  async guardarUbicacionRepartidor({ pedidoId, despachadorId, latitude, longitude, precisionM }) {
+    const { error } = await supabase
+      .from('seguimiento_pedidos')
+      .upsert({
+        pedido_id: pedidoId,
+        despachador_id: despachadorId,
+        latitude,
+        longitude,
+        precision_m: precisionM,
+      }, { onConflict: 'pedido_id' });
+    if (error) throw error;
+  },
+  async listar({ estados } = {}) {
+    const consultar = async (campos) => {
+      let query = supabase.from('pedidos').select(campos).order('creado_en', { ascending: false });
+      if (estados?.length) query = query.in('estado', estados);
+      return query;
+    };
+
+    let { data, error } = await consultar(CAMPOS_PEDIDO_COMPLETO);
+    if (error && esColumnaFaltante(error.message)) {
+      const alternativa = await consultar(CAMPOS_PEDIDO_SIN_EVIDENCIA);
+      if (!alternativa.error) {
+        data = alternativa.data;
+        error = null;
+      }
+    }
+
+    if (error) throw error;
+
+    const pedidos = data || [];
+    if (!pedidos.length) return pedidos;
+
+    const { data: historial, error: historialError } = await supabase
+      .from('pedido_estado_historial')
+      .select('id, pedido_id, estado, cambiado_en, cambiado_por_nombre')
+      .in('pedido_id', pedidos.map((pedido) => pedido.id))
+      .order('cambiado_en', { ascending: true });
+
+    if (historialError) {
+      throw new Error(`No se pudo cargar el historial de pedidos: ${historialError.message}`);
+    }
+
+    const historialPorPedido = new Map();
+    for (const evento of historial || []) {
+      const eventos = historialPorPedido.get(evento.pedido_id) || [];
+      eventos.push(evento);
+      historialPorPedido.set(evento.pedido_id, eventos);
+    }
+
+    // El reporte de entrega vive en su propia tabla y tiene RLS: el
+    // superadmin no lo ve aunque pida el pedido. Si el SQL todavia no
+    // se corrio, la lista sigue funcionando sin el reporte.
+    const { data: reportes } = await supabase
+      .from('pedido_reportes_entrega')
+      .select('pedido_id, observaciones, estado_producto, fotos, enviado_en')
+      .in('pedido_id', pedidos.map((pedido) => pedido.id));
+
+    const reportesPorPedido = new Map();
+    for (const reporte of reportes || []) {
+      reportesPorPedido.set(reporte.pedido_id, {
+        observaciones_entrega: reporte.observaciones,
+        estado_producto: reporte.estado_producto,
+        fotos_observaciones: reporte.fotos || [],
+        observaciones_entrega_en: reporte.enviado_en,
+      });
+    }
+
+    return pedidos.map((pedido) => ({
+      ...pedido,
+      historial_estado: historialPorPedido.get(pedido.id) || [],
+      reporte_entrega: reportesPorPedido.get(pedido.id) || null,
+    }));
+  },
+
   async obtenerDisponibilidadPedidosPlanta() {
     const { data, error } = await supabase.rpc('obtener_disponibilidad_pedidos_planta');
     if (error) throw error;
@@ -80,76 +151,54 @@ export const pedidosRepository = {
     return data;
   },
 
-  async enviarObservacionesEntrega(pedidoId, observaciones) {
+  // Reporte de entrega que manda la sucursal. Las fotos se suben con el
+  // prefijo que exige la base: pedido-<id>/observaciones/.
+  async enviarObservacionesEntrega(pedidoId, datos = {}) {
+    const { observaciones, estadoProducto, fotos } = typeof datos === 'string'
+      ? { observaciones: datos }
+      : datos;
+
+    const rutas = await evidenciasRepository.subirFotosExtra(
+      fotos,
+      `pedido-${pedidoId}/observaciones`
+    );
+
     const { data, error } = await supabase.rpc('enviar_observaciones_entrega_pedido', {
       p_pedido_id: pedidoId,
-      p_observaciones: observaciones.trim(),
+      p_observaciones: observaciones?.trim() || null,
+      p_estado_producto: estadoProducto || null,
+      p_fotos: rutas,
     });
     if (error) throw error;
     return data;
   },
 
-  async guardarUbicacionRepartidor({ pedidoId, despachadorId, latitude, longitude, precisionM }) {
-    const { error } = await supabase
-      .from('seguimiento_pedidos')
-      .upsert({
-        pedido_id: pedidoId,
-        despachador_id: despachadorId,
-        latitude,
-        longitude,
-        precision_m: precisionM,
-      }, { onConflict: 'pedido_id' });
+  async rechazar(pedidoId, motivo) {
+    const { data, error } = await supabase.rpc('rechazar_pedido', {
+      p_pedido_id: pedidoId,
+      p_motivo: motivo?.trim(),
+    });
     if (error) throw error;
+    return data;
   },
 
-  // Listar pedidos visibles para el usuario (RLS ya filtra por rol)
-  async listar({ estados } = {}) {
-    const consultar = async (campos) => {
-      let query = supabase.from('pedidos').select(campos).order('creado_en', { ascending: false });
-      if (estados?.length) query = query.in('estado', estados);
-      return query;
-    };
-
-    let { data, error } = await consultar(CAMPOS_PEDIDO_COMPLETO);
-
-    // Si la base todavia no tiene alguna columna nueva, se listan los
-    // pedidos igual, sin la evidencia. Al correr el SQL aparece sola.
-    // PostgREST no siempre dice "column does not exist" cuando el
-    // select falla, asi que nos fijamos tambien en el 400.
-    if (error && esColumnaFaltante(error.message)) {
-      const alternativa = await consultar(CAMPOS_PEDIDO_SIN_EVIDENCIA);
-      if (!alternativa.error) {
-        data = alternativa.data;
-        error = null;
-      }
-    }
+  // Crear un pedido desde la sucursal. Solo unidades.
+  // La sucursal y el autor los completa la base de datos; no se envian.
+  async crear({ unidades, fecha, observaciones }) {
+    const { data, error } = await supabase
+      .from('pedidos')
+      .insert([
+        {
+          unidades: Number(unidades),
+          fecha: fecha || new Date().toISOString().split('T')[0],
+          observaciones: observaciones?.trim() || null,
+        },
+      ])
+      .select()
+      .single();
 
     if (error) throw error;
-
-    const pedidos = data || [];
-    if (!pedidos.length) return pedidos;
-
-    const { data: historial, error: historialError } = await supabase
-      .from('pedido_estado_historial')
-      .select('id, pedido_id, estado, cambiado_en, cambiado_por_nombre')
-      .in('pedido_id', pedidos.map((pedido) => pedido.id))
-      .order('cambiado_en', { ascending: true });
-
-    if (historialError) {
-      throw new Error(`No se pudo cargar el historial de pedidos: ${historialError.message}`);
-    }
-
-    const historialPorPedido = new Map();
-    for (const evento of historial || []) {
-      const eventos = historialPorPedido.get(evento.pedido_id) || [];
-      eventos.push(evento);
-      historialPorPedido.set(evento.pedido_id, eventos);
-    }
-
-    return pedidos.map((pedido) => ({
-      ...pedido,
-      historial_estado: historialPorPedido.get(pedido.id) || [],
-    }));
+    return data;
   },
 
   // Registrar la salida del pollo hacia la sucursal.
@@ -160,8 +209,6 @@ export const pedidosRepository = {
       unidades, kilos, precio_por_kilo, transportista,
       entregado_por, observaciones, foto, firma, fotosExtra, ubicacion,
     } = datos;
-
-    console.log('[DEBUG despacho] ubicacion recibida:', ubicacion);
 
     const rutas = await evidenciasRepository.subirVarias({
       foto: foto && { archivo: foto, tipo: 'foto', referencia: `pedido-${pedidoId}` },
@@ -211,8 +258,6 @@ export const pedidosRepository = {
   // unidades, foto y firma. Sin foto o sin firma no se puede cerrar.
   async confirmarRecepcion(pedidoId, datos) {
     const { unidades_recibidas, observaciones, recibido_por, foto, firma, ubicacion, fotosExtra } = datos;
-
-    console.log('[DEBUG entrega] ubicacion recibida:', ubicacion);
 
     // Primero suben las pruebas, y recien despues se confirma.
     // Si el confirmarse falla, quedan huerfanas pero el pedido
