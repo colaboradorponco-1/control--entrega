@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { sucursalRepository } from '../../repositories/sucursalRepository';
 import { authRepository } from '../../repositories/AuthRepository';
-import { LogOut, Store, CheckCircle2, Clock, AlertCircle, Sun, Moon, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, LogOut, Store, CheckCircle2, Clock, AlertCircle, Sun, Moon, ShoppingCart } from 'lucide-react';
 
 export default function MisEntregas() {
   const navigate = useNavigate();
@@ -14,13 +14,7 @@ export default function MisEntregas() {
   const [cargando, setCargando] = useState(true);
   const [mensaje, setMensaje] = useState(null);
 
-  useEffect(() => {
-    if (perfil?.sucursal_id) {
-      cargarEntregas();
-    }
-  }, [perfil]);
-
-  const cargarEntregas = async () => {
+  const cargarEntregas = useCallback(async () => {
     try {
       setCargando(true);
       const data = await sucursalRepository.obtenerEntregasPorSucursal(perfil.sucursal_id);
@@ -30,14 +24,20 @@ export default function MisEntregas() {
     } finally {
       setCargando(false);
     }
-  };
+  }, [perfil]);
+
+  useEffect(() => {
+    if (perfil?.sucursal_id) {
+      cargarEntregas();
+    }
+  }, [perfil?.sucursal_id, cargarEntregas]);
 
   const handleConfirmar = async (despachoId) => {
     try {
       await sucursalRepository.confirmarEntrega(despachoId, 'Entrega recibida conforme');
       setMensaje({ tipo: 'exito', texto: 'Recepción confirmada con éxito' });
       cargarEntregas();
-    } catch (err) {
+    } catch {
       setMensaje({ tipo: 'error', texto: 'Error al confirmar la recepción' });
     }
   };
@@ -62,6 +62,13 @@ export default function MisEntregas() {
           <p className={`text-xs sm:text-sm mt-1 ${muted}`}>Encargado: <span className={`font-medium ${strong}`}>{perfil?.nombre_completo}</span></p>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+          <button
+            onClick={() => navigate('/panel')}
+            aria-label="Volver al panel"
+            className={`p-2.5 rounded-xl border transition ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
+          >
+            <ArrowLeft size={18} />
+          </button>
           <button
             onClick={toggleTheme}
             aria-label="Cambiar modo"

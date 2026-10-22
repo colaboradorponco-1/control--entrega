@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Camera, Images, X, Plus } from 'lucide-react';
 
 const MAXIMO = 7;
+const TEMA_VACIO = {};
 
 /**
  * fotos de apoyo para las observaciones.
@@ -15,7 +16,7 @@ export default function FotosObservaciones({
   fotos,
   onCambio,
   onError,
-  theme = {},
+  theme = TEMA_VACIO,
   etiqueta = 'Fotos de apoyo',
 }) {
   const inputCamara = useRef(null);
