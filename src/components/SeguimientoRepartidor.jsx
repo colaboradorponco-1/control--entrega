@@ -28,7 +28,7 @@ const ICONO_SUCURSAL = L.divIcon({
   iconAnchor: [16, 16],
 });
 
-export default function SeguimientoRepartidor({ pedido, darkMode }) {
+export default function SeguimientoRepartidor({ pedido, darkMode, sinMapa = false }) {
   const contenedor = useRef(null);
   const mapa = useRef(null);
   const capa = useRef(null);
@@ -370,13 +370,15 @@ export default function SeguimientoRepartidor({ pedido, darkMode }) {
         )}
       </div>
 
-      <div
-        ref={contenedor}
-        className={`mb-2 h-56 overflow-hidden rounded-lg border border-black/10 ${
-          mapaVisible ? '' : 'hidden'
-        }`}
-        aria-label="Mapa de seguimiento del repartidor"
-      />
+      {!sinMapa && (
+        <div
+          ref={contenedor}
+          className={`mb-2 h-56 overflow-hidden rounded-lg border border-black/10 ${
+            mapaVisible ? '' : 'hidden'
+          }`}
+          aria-label="Mapa de seguimiento del repartidor"
+        />
+      )}
 
       {error && (
         <p role="status" className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-300">

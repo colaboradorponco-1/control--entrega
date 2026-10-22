@@ -1,23 +1,8 @@
--- ============================================================
---  ARREGLAR: registrar_lote_proveedor
---  La recepcion de planta (operador_planta) llama esta funcion
---  con 14 parametros (incluye p_fotos_extra, p_latitude,
---  p_longitud), pero en la base no existe -> la recepcion no
---  guarda nada y recepcion_pollo queda en 0 filas.
---
---  Este archivo borra cualquier version vieja y deja la version
---  completa (la misma de MAPA_UBICACION.sql) + recarga el cache.
---
---  Requiere public.validar_fotos_extra (ARREGLAR_HELPERS_EVIDENCIA.sql).
---  Es seguro correrlo varias veces.
--- ============================================================
 
--- 1) Columnas de ubicacion (por si acaso)
 ALTER TABLE public.recepcion_pollo
   ADD COLUMN IF NOT EXISTS latitude  NUMERIC(10,7),
   ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7);
 
--- 2) Borrar TODAS las versiones viejas (cualquier firma)
 DO $$
 DECLARE
   r RECORD;
@@ -32,7 +17,6 @@ BEGIN
   END LOOP;
 END $$;
 
--- 3) Version completa (14 parametros)
 CREATE OR REPLACE FUNCTION public.registrar_lote_proveedor(
   p_numero_recibo TEXT,
   p_proveedor_id INT,
@@ -105,8 +89,6 @@ GRANT EXECUTE ON FUNCTION public.registrar_lote_proveedor(
 
 NOTIFY pgrst, 'reload schema';
 
--- Verificacion: debe listar exactamente una version, terminando en
--- "..., text[], numeric, numeric".
 SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS argumentos
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace

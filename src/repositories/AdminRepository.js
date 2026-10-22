@@ -22,17 +22,17 @@ export const adminRepository = {
       const [recep, desp, entre] = await Promise.all([
         supabase
           .from('recepcion_pollo')
-          .select('id, fecha, kilos, unidades, numero_recibo, proveedor_id, latitude, longitude')
+          .select('id, fecha, kilos, unidades, numero_recibo, proveedor_id, creado_por, latitude, longitude')
           .order('fecha', { ascending: false })
           .limit(limite),
         supabase
           .from('despacho_pollo')
-          .select('id, fecha, kilos, unidades, transportista, estado_recepcion, sucursal_id, latitude, longitude')
+          .select('id, fecha, kilos, unidades, transportista, estado_recepcion, sucursal_id, despachado_por, latitude, longitude')
           .order('fecha', { ascending: false })
           .limit(limite),
         supabase
           .from('pedido_recepciones')
-          .select('id, pedido_id, recibido_en, unidades_recibidas, faltantes, latitude, longitud')
+          .select('id, pedido_id, recibido_en, unidades_recibidas, faltantes, recibido_por_nombre, latitude, longitud')
           .order('recibido_en', { ascending: false })
           .limit(limite),
       ]);
@@ -68,6 +68,19 @@ export const adminRepository = {
       if (proveedoresResult.error) throw proveedoresResult.error;
       if (sucursalesResult.error) throw sucursalesResult.error;
 
+      // Quien registro cada punto, para poder filtrar el mapa por
+      // usuario. recepcion y despacho guardan el id del perfil
+      // (perfiles_usuario.id); la entrega guarda el nombre directo.
+      const perfilIds = [...new Set([
+        ...(recep.data || []).map((item) => item.creado_por),
+        ...(desp.data || []).map((item) => item.despachado_por),
+      ].filter(Boolean))];
+      const perfilesResult = perfilIds.length
+        ? await supabase.from('perfiles_usuario').select('id, nombre_completo').in('id', perfilIds)
+        : { data: [], error: null };
+      if (perfilesResult.error) throw perfilesResult.error;
+      const perfilPorId = new Map((perfilesResult.data || []).map((perfil) => [perfil.id, perfil]));
+
       const pedidoPorId = new Map((pedidos || []).map((pedido) => [pedido.id, pedido]));
       const proveedorPorId = new Map((proveedoresResult.data || []).map((proveedor) => [proveedor.id, proveedor]));
       const sucursalPorId = new Map((sucursalesResult.data || []).map((sucursal) => [sucursal.id, sucursal]));
@@ -76,10 +89,12 @@ export const adminRepository = {
         recep: (recep.data || []).map((item) => ({
           ...item,
           proveedores: proveedorPorId.get(item.proveedor_id) || null,
+          perfil: perfilPorId.get(item.creado_por) || null,
         })),
         desp: (desp.data || []).map((item) => ({
           ...item,
           sucursales: sucursalPorId.get(item.sucursal_id) || null,
+          perfil: perfilPorId.get(item.despachado_por) || null,
         })),
         entre: entregas.map((entrega) => {
           const pedido = pedidoPorId.get(entrega.pedido_id);
@@ -122,6 +137,8 @@ export const adminRepository = {
         fecha: numero(r.fecha),
         titulo: r.proveedores?.nombre || `Lote ${numero(r.numero_recibo)}`,
         detalle: `${numero(r.kilos)} kg - ${numero(r.unidades)} und`,
+        sucursal: 'Planta',
+        usuario: r.perfil?.nombre_completo || '',
       });
     });
 
@@ -139,6 +156,8 @@ export const adminRepository = {
         detalle: [numero(d.kilos) + ' kg', d.transportista, d.estado_recepcion]
           .filter(Boolean)
           .join(' - '),
+        sucursal: d.sucursales?.nombre || '',
+        usuario: d.perfil?.nombre_completo || '',
       });
     });
 
@@ -154,6 +173,8 @@ export const adminRepository = {
         fecha: numero(e.fecha),
         titulo: e.sucursales?.nombre || 'Entrega',
         detalle: `Recibido ${numero(e.unidades_recibidas)} und${e.faltantes ? ' - con faltantes' : ''}`,
+        sucursal: e.sucursales?.nombre || '',
+        usuario: e.recibido_por_nombre || '',
       });
     });
 

@@ -90,8 +90,6 @@ export const recepcionRepository = {
       fotosExtra, ubicacion,
     } = datos;
 
-    console.log('[DEBUG recepcion] ubicacion recibida:', ubicacion);
-
     // Cada archivo sube a una carpeta con el numero de recibo,
     // asi despues se encuentra todo de un lote junto.
     const referencia = `lote-${numero_recibo || 'sin-numero'}-${Date.now()}`;

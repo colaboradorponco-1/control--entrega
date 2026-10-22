@@ -1,5 +1,3 @@
--- Agrega las coordenadas que consulta el mapa general del administrador.
--- Es seguro ejecutarlo mas de una vez.
 
 ALTER TABLE public.recepcion_pollo
   ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7),

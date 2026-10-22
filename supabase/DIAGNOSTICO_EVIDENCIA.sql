@@ -1,10 +1,3 @@
--- ============================================================
---  DIAGNOSTICO DE EVIDENCIA (para entregas/despachos/recepciones)
---  Si la entrega no se guarda, casi siempre es porque falta el
---  bucket o las funciones de apoyo. Esto lo confirma.
---
---  Se puede correr las veces que quieras. No cambia nada.
--- ============================================================
 
 DROP TABLE IF EXISTS _diag_evidencia;
 CREATE TEMP TABLE _diag_evidencia (seccion TEXT, detalle TEXT);

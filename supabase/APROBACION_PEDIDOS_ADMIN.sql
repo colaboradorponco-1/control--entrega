@@ -1,5 +1,3 @@
--- Ejecutar despues de pedidos.sql, duenos.sql y PEDIDOS_DUENO_Y_OBSERVACIONES.sql.
-
 DO $$
 DECLARE
   v_constraint RECORD;

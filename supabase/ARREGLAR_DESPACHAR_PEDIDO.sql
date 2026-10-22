@@ -1,36 +1,12 @@
--- ============================================================
---  ARREGLAR despachar_pedido  (error "schema cache")
--- ------------------------------------------------------------
---  Corrige:
---    Could not find the function public.despachar_pedido(...)
---    in the schema cache
---
---  Causa: en la base quedo la version vieja de la funcion
---  (sin p_fotos_extra, p_latitude ni p_longitud). El panel de
---  despacho la llama con 12 parametros y PostgREST no la
---  encuentra.
---
---  Que hace: borra las versiones viejas y crea la version
---  completa (la misma que MAPA_UBICACION.sql) + recarga el
---  cache de PostgREST.
---
---  Requiere que existan public.verificar_archivo y
---  public.validar_fotos_extra (las crea FORMULARIOS.sql).
---  Es seguro correrlo varias veces.
--- ============================================================
-
--- 1) Columnas de ubicacion (por si acaso) y fotos de apoyo
 ALTER TABLE public.despacho_pollo
   ADD COLUMN IF NOT EXISTS latitude  NUMERIC(10,7),
   ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7),
   ADD COLUMN IF NOT EXISTS fotos_extra TEXT[] NOT NULL DEFAULT '{}';
 
--- 2) Borrar las firmas viejas para que no queden ambiguas
 DROP FUNCTION IF EXISTS public.despachar_pedido(INT, INT, NUMERIC, TEXT);
 DROP FUNCTION IF EXISTS public.despachar_pedido(INT, INT, NUMERIC, NUMERIC, TEXT, TEXT, TEXT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.despachar_pedido(INT, INT, NUMERIC, NUMERIC, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT[]);
 
--- 3) Version completa (12 parametros)
 CREATE OR REPLACE FUNCTION public.despachar_pedido(
   p_pedido_id INT,
   p_unidades INT,
@@ -124,10 +100,8 @@ GRANT EXECUTE ON FUNCTION public.despachar_pedido(
   INT, INT, NUMERIC, NUMERIC, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT[], NUMERIC, NUMERIC
 ) TO authenticated;
 
--- 4) Recargar el cache de PostgREST
 NOTIFY pgrst, 'reload schema';
 
--- 5) Verificacion: debe mostrar "ok" y la firma de 12 parametros
 SELECT
   CASE WHEN EXISTS (
     SELECT 1

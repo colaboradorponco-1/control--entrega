@@ -1,24 +1,3 @@
--- ============================================================
---  PLANILLA DE VENTAS POR SUCURSAL Y SALDO DE INVENTARIO
--- ============================================================
---  Solo el superadmin puede leer y editar estas planillas.
---
---  Contiene:
---    1) public.planilla_ventas      -> ventas diarias por sucursal
---    2) public.planilla_inventario  -> stock diario por proveedor
---       (S. AYER / ENTRANTE / SALIENTE / S. HOY)
---
---  La Planilla de Compras y Costos Promedio no necesita tabla:
---  se arma como reporte desde public.recepcion_pollo.
---
---  Se puede ejecutar varias veces. No rompe nada.
--- ============================================================
-
--- ------------------------------------------------------------
--- 0) Helper: saber si el usuario logueado es superadmin
--- ------------------------------------------------------------
--- get_user_rol() convierte 'superadmin' en 'administrador', asi
--- que para RLS necesitamos mirar el rol real.
 CREATE OR REPLACE FUNCTION public.es_superadmin()
 RETURNS boolean
 LANGUAGE sql
@@ -34,10 +13,6 @@ AS $$
       AND r.nombre = 'superadmin'
   );
 $$;
-
--- ------------------------------------------------------------
--- 1) Ventas diarias por sucursal
--- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.planilla_ventas (
   id SERIAL PRIMARY KEY,
   fecha DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -50,10 +25,6 @@ CREATE TABLE IF NOT EXISTS public.planilla_ventas (
   UNIQUE (fecha, sucursal_id)
 );
 
--- ------------------------------------------------------------
--- 2) Inventario diario por proveedor
--- ------------------------------------------------------------
--- S. HOY se calcula sola: S. AYER + ENTRANTE - SALIENTE.
 CREATE TABLE IF NOT EXISTS public.planilla_inventario (
   id SERIAL PRIMARY KEY,
   fecha DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -68,9 +39,6 @@ CREATE TABLE IF NOT EXISTS public.planilla_inventario (
   UNIQUE (fecha, proveedor_id)
 );
 
--- ------------------------------------------------------------
--- 3) actualizado_en automatico
--- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.tocar_actualizado_en()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -93,9 +61,6 @@ CREATE TRIGGER planilla_inventario_actualizado
   FOR EACH ROW
   EXECUTE FUNCTION public.tocar_actualizado_en();
 
--- ------------------------------------------------------------
--- 4) Seguridad: solo superadmin
--- ------------------------------------------------------------
 ALTER TABLE public.planilla_ventas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.planilla_inventario ENABLE ROW LEVEL SECURITY;
 
