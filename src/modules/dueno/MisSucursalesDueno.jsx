@@ -31,6 +31,7 @@ const ETIQUETA_ESTADO = {
   RECOGIDO: 'En camino',
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
+  RECHAZADO: 'Rechazado',
 };
 
 export default function MisSucursalesDueno() {
@@ -52,6 +53,9 @@ export default function MisSucursalesDueno() {
     fecha: fechaHoyBolivia(),
     observaciones: '',
   });
+  const [busquedaSucursal, setBusquedaSucursal] = useState('');
+  const [disponibilidad, setDisponibilidad] = useState(null);
+  const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -121,6 +125,14 @@ export default function MisSucursalesDueno() {
       setError('Selecciona una sucursal e ingresa una cantidad válida de unidades.');
       return;
     }
+    if (!formPedido.fecha) {
+      setError('Selecciona la fecha en que necesitas el pedido.');
+      return;
+    }
+    if (formPedido.fecha < fechaHoyBolivia()) {
+      setError('La fecha del pedido no puede estar en el pasado.');
+      return;
+    }
 
     try {
       setEnviandoPedido(true);
@@ -149,6 +161,40 @@ export default function MisSucursalesDueno() {
 
   // La consulta y las politicas RLS limitan al dueño a sus sucursales asignadas.
   const datos = pedidos;
+
+  const sucursalesFiltradas = useMemo(() => {
+    const t = busquedaSucursal.trim().toLowerCase();
+    const base = t
+      ? sucursales.filter((s) => (
+        (s.nombre || '').toLowerCase().includes(t)
+        || (s.sector || '').toLowerCase().includes(t)
+      ))
+      : sucursales;
+    const seleccionada = sucursales.find((s) => String(s.id) === String(formPedido.sucursal_id));
+    if (seleccionada && !base.some((s) => s.id === seleccionada.id)) {
+      return [seleccionada, ...base];
+    }
+    return base;
+  }, [sucursales, busquedaSucursal, formPedido.sucursal_id]);
+
+  const unidadesPedidas = Number(formPedido.unidades) || 0;
+  const unidadesDisponibles = disponibilidad?.unidades_disponibles;
+  const excedeDisponible = typeof unidadesDisponibles === 'number' && unidadesPedidas > unidadesDisponibles;
+
+  const abrirNuevoPedido = async () => {
+    setFormPedido({ sucursal_id: '', unidades: '', fecha: fechaHoyBolivia(), observaciones: '' });
+    setBusquedaSucursal('');
+    setError(null);
+    setMostrarPedido(true);
+    try {
+      setCargandoDisponibilidad(true);
+      setDisponibilidad(await pedidosRepository.obtenerDisponibilidadPedidosPlanta());
+    } catch {
+      setDisponibilidad(null);
+    } finally {
+      setCargandoDisponibilidad(false);
+    }
+  };
 
   const filtrados = useMemo(() => {
     const t = busqueda.trim().toLowerCase();
@@ -259,22 +305,51 @@ export default function MisSucursalesDueno() {
                   </button>
                 </div>
                 <form onSubmit={crearPedido} className="space-y-4">
-                  <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
-                    Sucursal *
+                  <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                    darkMode ? 'border-slate-800 bg-slate-950/50' : 'border-gray-200 bg-gray-50'
+                  } ${muted}`}>
+                    {cargandoDisponibilidad ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" /> Consultando disponibilidad de planta...
+                      </>
+                    ) : disponibilidad ? (
+                      <>
+                        <Boxes size={14} className="text-emerald-500" /> Disponible en planta:
+                        <span className={`font-bold ${strong}`}>{disponibilidad.unidades_disponibles ?? 0} u</span>
+                        {disponibilidad.kilos_stock ? <span>· {Number(disponibilidad.kilos_stock).toFixed(1)} kg</span> : null}
+                      </>
+                    ) : (
+                      <>No se pudo consultar la disponibilidad de planta.</>
+                    )}
+                  </div>
+                  <div>
+                    <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
+                      Sucursal *
+                    </label>
+                    <div className="relative mt-2">
+                      <Search className={`absolute left-3.5 top-3 ${muted}`} size={16} />
+                      <input
+                        type="text"
+                        value={busquedaSucursal}
+                        onChange={(e) => setBusquedaSucursal(e.target.value)}
+                        placeholder="Buscar sucursal o zona..."
+                        className={`w-full rounded-xl border pl-10 pr-4 py-3 text-sm normal-case ${input}`}
+                      />
+                    </div>
                     <select
                       required
                       value={formPedido.sucursal_id}
                       onChange={(e) => setFormPedido({ ...formPedido, sucursal_id: e.target.value })}
                       className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm normal-case ${input}`}
                     >
-                      <option value="">Selecciona una sucursal</option>
-                      {sucursales.map((sucursal) => (
+                      <option value="">{sucursalesFiltradas.length ? 'Selecciona una sucursal' : 'Sin resultados'}</option>
+                      {sucursalesFiltradas.map((sucursal) => (
                         <option key={sucursal.id} value={sucursal.id}>
                           {sucursal.nombre}{sucursal.sector ? ` · ${sucursal.sector}` : ''}
                         </option>
                       ))}
                     </select>
-                  </label>
+                  </div>
                   <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
                     Unidades *
                     <input
@@ -286,6 +361,11 @@ export default function MisSucursalesDueno() {
                       onChange={(e) => setFormPedido({ ...formPedido, unidades: e.target.value })}
                       className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm normal-case ${input}`}
                     />
+                    {excedeDisponible && (
+                      <span className="mt-1.5 block text-[11px] font-bold normal-case text-amber-500">
+                        Pediste más de lo disponible en planta ({unidadesDisponibles} u). La planta podría no cubrirlo.
+                      </span>
+                    )}
                   </label>
                   <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
                     Fecha requerida *
@@ -344,7 +424,7 @@ export default function MisSucursalesDueno() {
             </div>
             {esDueño && !sinVinculo && (
               <button
-                onClick={() => setMostrarPedido(true)}
+                onClick={abrirNuevoPedido}
                 disabled={!sucursales.length}
                 className="flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -402,12 +482,14 @@ export default function MisSucursalesDueno() {
                                 ? 'bg-emerald-500/10 text-emerald-500'
                                 : p.estado === 'CANCELADO'
                                 ? 'bg-red-500/10 text-red-500'
+                                : p.estado === 'RECHAZADO'
+                                ? 'bg-rose-500/10 text-rose-500'
                                 : 'bg-amber-500/10 text-amber-500'
                             }`}
                           >
                             {ETIQUETA_ESTADO[p.estado] || p.estado}
                           </span>
-                          {p.estado !== 'CANCELADO' && (
+                          {p.estado !== 'CANCELADO' && p.estado !== 'RECHAZADO' && (
                             <div
                               className="flex max-w-32 gap-1"
                               aria-label={`Avance: ${p.estado}`}
@@ -427,7 +509,7 @@ export default function MisSucursalesDueno() {
                         </div>
                       </td>
                       <td className={`px-4 py-3 text-xs ${muted}`}>
-                        {p.pedido_recepciones?.[0]?.observaciones_entrega || '—'}
+                        {p.reporte_entrega?.observaciones_entrega || '—'}
                       </td>
                     </tr>
                     {p.estado === 'RECOGIDO' && (
