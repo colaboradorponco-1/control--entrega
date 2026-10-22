@@ -22,9 +22,10 @@ const ESTADOS = {
   RECOGIDO: 'En camino',
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
+  RECHAZADO: 'Rechazado',
 };
 
-const ORDEN = ['PENDIENTE', 'APROBADO', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO', 'CANCELADO'];
+const ORDEN = ['PENDIENTE', 'APROBADO', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO', 'CANCELADO', 'RECHAZADO'];
 
 const BADGE = {
   PENDIENTE: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
@@ -34,6 +35,7 @@ const BADGE = {
   RECOGIDO: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
   ENTREGADO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
   CANCELADO: 'bg-red-500/10 text-red-500 border-red-500/20',
+  RECHAZADO: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
 };
 
 // Pantalla compartida por planta y despachador
@@ -436,6 +438,12 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                             <span className="ml-1">· pedido {new Date(p.creado_en).toLocaleDateString('es-BO')}</span>
                           </p>
                           {p.observaciones && <p className={`mt-2 text-xs italic ${muted}`}>“{p.observaciones}”</p>}
+                          {p.estado === 'RECHAZADO' && p.motivo_rechazo && (
+                            <p className={`mt-2 rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs ${normal}`}>
+                              <span className="font-bold text-rose-400">Motivo del rechazo: </span>
+                              {p.motivo_rechazo}
+                            </p>
+                          )}
 
                           {accion && (
                             <button
