@@ -47,6 +47,10 @@ const armarPerfil = async (perfil) => {
     // Si la columna 'activo' todavia no existe, el respaldo de
     // arriba la pone en true, para no dejar a nadie afuera por error.
     activo: perfil.activo !== false,
+    // Foto y avatar: aparecen cuando se corre PERFIL_AVATAR.sql.
+    foto_url: perfil.foto_url || null,
+    avatar_estilo: perfil.avatar_estilo || null,
+    avatar_semilla: perfil.avatar_semilla || null,
   };
 };
 
@@ -68,11 +72,28 @@ export const authRepository = {
     // desactivados. Si la columna todavia no existe (migracion
     // USUARIOS_ACTIVO.sql sin correr), se sigue leyendo el resto
     // en vez de romper el login de todo el mundo.
-    const { data: perfil, error: perfilError } = await supabase
-      .from('perfiles_usuario')
-      .select('id, nombre_completo, sucursal_id, rol_id, activo')
-      .eq('usuario_id', userId)
-      .maybeSingle();
+    // Lo mismo con las columnas del avatar (PERFIL_AVATAR.sql): se
+    // reintenta con menos columnas hasta que funcione.
+    const pedir = async (columnas) => {
+      const { data, error } = await supabase
+        .from('perfiles_usuario')
+        .select(columnas)
+        .eq('usuario_id', userId)
+        .maybeSingle();
+      return { data, error };
+    };
+
+    let { data: perfil, error: perfilError } = await pedir(
+      'id, nombre_completo, sucursal_id, rol_id, activo, foto_url, avatar_estilo, avatar_semilla'
+    );
+
+    if (perfilError && esColumnaFaltante(perfilError.message || '')) {
+      const respaldo = await pedir('id, nombre_completo, sucursal_id, rol_id, activo');
+      if (!respaldo.error) {
+        perfil = respaldo.data;
+        perfilError = respaldo.error;
+      }
+    }
 
     if (perfilError) {
       // Se reintenta SIN la columna nueva, en vez de romper. Si aca
@@ -80,11 +101,9 @@ export const authRepository = {
       // todos: cada usuario entraria como "sin perfil".
       if (!esColumnaFaltante(perfilError.message || '')) throw perfilError;
 
-      const { data: respaldo, error: errorRespaldo } = await supabase
-        .from('perfiles_usuario')
-        .select('id, nombre_completo, sucursal_id, rol_id')
-        .eq('usuario_id', userId)
-        .maybeSingle();
+      const { data: respaldo, error: errorRespaldo } = await pedir(
+        'id, nombre_completo, sucursal_id, rol_id'
+      );
 
       if (errorRespaldo) throw errorRespaldo;
       if (!respaldo) return sinPerfil();
@@ -128,5 +147,66 @@ export const authRepository = {
     const { data } = await supabase.auth.getUser();
     if (!data?.user?.email) throw new Error('No hay una sesión activa para reenviar el correo.');
     return this.solicitarRecuperacion(data.user.email);
+  },
+
+  // 7. Guardar los datos del perfil: nombre, foto y avatar. La base
+  // decide que se puede cambiar (el rol y la sucursal no se tocan).
+  async actualizarMiPerfil({ nombre, foto_url, avatar_estilo, avatar_semilla } = {}) {
+    const { data, error } = await supabase.rpc('actualizar_mi_perfil', {
+      p_nombre: nombre ?? null,
+      p_foto_url: foto_url ?? null,
+      p_avatar_estilo: avatar_estilo ?? null,
+      p_avatar_semilla: avatar_semilla ?? null,
+    });
+
+    if (error) throw error;
+    return data;
+  },
+
+  // 8. Subir la foto de perfil al bucket privado 'avatares'. Cada
+  // usuario sube a su propia carpeta.
+  async subirAvatar(archivo) {
+    if (!archivo) return null;
+
+    const { data: sesion } = await supabase.auth.getUser();
+    const usuarioId = sesion?.user?.id;
+    if (!usuarioId) throw new Error('No hay una sesión activa.');
+
+    const sello = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const esPng = (archivo.type || 'image/jpeg') === 'image/png';
+    const ruta = `${usuarioId}/avatar-${sello}.${esPng ? 'png' : 'jpg'}`;
+
+    const { error } = await supabase.storage
+      .from('avatares')
+      .upload(ruta, archivo, { contentType: archivo.type || 'image/jpeg', upsert: false });
+
+    if (error) throw error;
+    return ruta;
+  },
+
+  // 9. Enlace temporal a la foto de perfil.
+  async urlAvatar(ruta) {
+    if (!ruta) return null;
+    const { data, error } = await supabase.rpc('url_avatar', {
+      p_ruta: ruta,
+      p_segundos: 900,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  // 10. Cambiar el correo de la cuenta. Supabase puede pedir
+  // confirmar el correo nuevo: por eso el frontend avisa.
+  async cambiarEmail(correo) {
+    const { data, error } = await supabase.auth.updateUser({ email: correo.trim() });
+    if (error) throw error;
+    return data?.user ?? null;
+  },
+
+  // 11. Cambiar la contraseña de la cuenta.
+  async cambiarPassword(password) {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    return true;
   },
 };

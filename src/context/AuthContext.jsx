@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../config/supabaseClient';
 import { authRepository } from '../repositories/AuthRepository';
 
@@ -26,6 +26,15 @@ export const AuthProvider = ({ children }) => {
 
   const usuarioId = usuario?.id ?? null;
 
+  // Vuelve a pedir el perfil: se usa despues de editar el nombre o
+  // el avatar para que la pantalla se actualice al toque.
+  const recargarPerfil = useCallback(async () => {
+    if (!usuarioId) return null;
+    const perfilData = await authRepository.obtenerPerfilUsuario(usuarioId);
+    setPerfil(perfilData);
+    return perfilData;
+  }, [usuarioId]);
+
   useEffect(() => {
     // Cada vez que cambia el usuario que inicio sesion se tira el perfil
     // anterior y se pide el nuevo. Asi, al entrar con otra cuenta, nunca
@@ -52,7 +61,10 @@ export const AuthProvider = ({ children }) => {
     return () => { activa = false; };
   }, [usuarioId]);
 
-  const valor = useMemo(() => ({ usuario, perfil, cargando }), [usuario, perfil, cargando]);
+  const valor = useMemo(
+    () => ({ usuario, perfil, cargando, recargarPerfil }),
+    [usuario, perfil, cargando, recargarPerfil]
+  );
 
   return (
     <AuthContext.Provider value={valor}>

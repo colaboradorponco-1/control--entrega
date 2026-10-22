@@ -1,10 +1,13 @@
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { authRepository } from '../../repositories/AuthRepository';
+import AvatarUsuario from '../../components/AvatarUsuario';
+import EditarPerfil from '../perfil/EditarPerfil';
 import {
-  ArrowRight, Boxes, Crown, FileSpreadsheet, LogOut, MapPin, Moon, PackageCheck, Route,
-  ShieldCheck, ShoppingCart, Sun, Truck, Users, Warehouse,
+  ArrowRight, Bell, Crown, FileSpreadsheet, LogOut, MapPin, Moon, PackageCheck, Route,
+  ShieldCheck, ShoppingCart, Sun, Truck, UserCog, Users, Warehouse,
 } from 'lucide-react';
 
 const PANELES_POR_ROL = {
@@ -15,7 +18,7 @@ const PANELES_POR_ROL = {
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
       { titulo: 'Planilla de ventas', detalle: 'Ventas por sucursal, inventario y costos de la semana.', ruta: '/planilla', icono: FileSpreadsheet },
       { titulo: 'Administrar usuarios', detalle: 'Gestiona usuarios y asigna roles administrativos.', ruta: '/usuarios', icono: Users },
-      { titulo: 'Ver pedidos', detalle: 'Consulta pedidos y su avance sin aprobarlos.', ruta: '/sucursal/pedidos', icono: ShoppingCart },
+      { titulo: 'Ver pedidos', detalle: 'Consulta pedidos y su avance sin aprobarlos.', ruta: '/sucursal', icono: ShoppingCart },
       { titulo: 'Sucursales', detalle: 'Consulta y organiza sucursales.', ruta: '/sucursales', icono: MapPin },
       { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
@@ -26,7 +29,8 @@ const PANELES_POR_ROL = {
     responsabilidad: 'Administra la operación general, aprueba pedidos y gestiona sucursales, rutas, dueños y usuarios no administrativos.',
     accesos: [
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
-      { titulo: 'Pedidos', detalle: 'Consulta y aprueba solicitudes de las sucursales.', ruta: '/sucursal/pedidos', icono: ShoppingCart },
+      { titulo: 'Bandeja de avisos', detalle: 'Reportes de entrega y faltantes de las sucursales.', ruta: '/avisos', icono: Bell },
+      { titulo: 'Pedidos', detalle: 'Consulta y aprueba solicitudes de las sucursales.', ruta: '/sucursal', icono: ShoppingCart },
       { titulo: 'Usuarios', detalle: 'Gestiona usuarios operativos y de sucursal.', ruta: '/usuarios', icono: Users },
       { titulo: 'Sucursales', detalle: 'Consulta y organiza sucursales.', ruta: '/sucursales', icono: MapPin },
       { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
@@ -52,8 +56,7 @@ const PANELES_POR_ROL = {
     titulo: 'Panel de Sucursal',
     responsabilidad: 'Solicita pedidos para su sucursal, revisa el avance y confirma la recepción de las entregas.',
     accesos: [
-      { titulo: 'Mis entregas', detalle: 'Revisa y confirma las entregas recibidas.', ruta: '/sucursal', icono: Boxes },
-      { titulo: 'Mis pedidos', detalle: 'Solicita pedidos y revisa su estado.', ruta: '/sucursal/pedidos', icono: ShoppingCart },
+      { titulo: 'Pedidos y entregas', detalle: 'Solicita pedidos, sigue su avance y confirma las recepciones.', ruta: '/sucursal', icono: ShoppingCart },
     ],
   },
   dueno: {
@@ -69,6 +72,7 @@ export default function PanelPrincipal() {
   const { perfil } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [editandoPerfil, setEditandoPerfil] = useState(false);
   const panel = PANELES_POR_ROL[perfil?.roles?.nombre];
   const rolLabel = perfil?.roles?.nombre?.replaceAll('_', ' ') || 'Usuario';
 
@@ -80,17 +84,31 @@ export default function PanelPrincipal() {
     <main className={`min-h-screen px-4 py-6 md:px-8 md:py-10 ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-100 text-gray-900'}`}>
       <div className="mx-auto max-w-6xl">
         <header className={`mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 shadow ${card}`}>
-          <div>
-            <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-500">
-              {perfil?.roles?.nombre === 'superadmin' ? <Crown size={16} /> : <ShieldCheck size={16} />}
-              {rolLabel}
-            </p>
-            <h1 className={`text-2xl font-black md:text-3xl ${strong}`}>
-              {panel?.titulo || 'Panel principal'}
-            </h1>
-            <p className={`mt-1 text-sm ${muted}`}>Bienvenido, {perfil?.nombre_completo || 'usuario'}</p>
+          <div className="flex items-center gap-4">
+            <AvatarUsuario perfil={perfil} size={56} />
+            <div>
+              <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-500">
+                {perfil?.roles?.nombre === 'superadmin' ? <Crown size={16} /> : <ShieldCheck size={16} />}
+                {rolLabel}
+              </p>
+              <h1 className={`text-2xl font-black md:text-3xl ${strong}`}>
+                {panel?.titulo || 'Panel principal'}
+              </h1>
+              <p className={`mt-1 text-sm ${muted}`}>Bienvenido, {perfil?.nombre_completo || 'usuario'}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setEditandoPerfil(true)}
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold transition ${
+                darkMode
+                  ? 'border-slate-700 text-amber-400 hover:bg-slate-800'
+                  : 'border-gray-300 text-amber-600 hover:bg-gray-50'
+              }`}
+            >
+              <UserCog size={16} /> Editar perfil
+            </button>
             <button
               type="button"
               onClick={toggleTheme}
@@ -136,6 +154,8 @@ export default function PanelPrincipal() {
           ))}
         </section>
       </div>
+
+      <EditarPerfil abierto={editandoPerfil} onCerrar={() => setEditandoPerfil(false)} />
     </main>
   );
 }
