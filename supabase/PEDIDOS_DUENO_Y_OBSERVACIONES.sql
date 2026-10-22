@@ -1,5 +1,3 @@
--- Ejecutar despues de pedidos.sql y duenos.sql.
-
 ALTER TABLE public.pedido_recepciones
   ADD COLUMN IF NOT EXISTS observaciones_entrega TEXT,
   ADD COLUMN IF NOT EXISTS observaciones_entrega_en TIMESTAMPTZ;
@@ -16,8 +14,7 @@ BEGIN
   IF public.get_user_rol() = 'administrador' THEN
     NEW.sucursal_id := COALESCE(NEW.sucursal_id, public.get_user_sucursal());
   ELSIF public.get_user_rol() = 'dueno' THEN
-    IF NEW.sucursal_id IS NULL
-       OR NOT public.get_user_es_dueno()
+    IF NOT public.get_user_es_dueno()
        OR NOT (NEW.sucursal_id = ANY(public.get_user_sucursales_dueno())) THEN
       RAISE EXCEPTION 'Solo puedes pedir para una sucursal asignada a tu cuenta';
     END IF;
@@ -58,10 +55,6 @@ AS $$
 DECLARE
   v_pedido public.pedidos;
 BEGIN
-  IF p_sucursal_id IS NULL THEN
-    RAISE EXCEPTION 'Selecciona una sucursal para el pedido';
-  END IF;
-
   IF NOT public.get_user_es_dueno()
      OR NOT (p_sucursal_id = ANY(public.get_user_sucursales_dueno())) THEN
     RAISE EXCEPTION 'No tienes permiso para pedir para esa sucursal';

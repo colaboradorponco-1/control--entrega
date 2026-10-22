@@ -1,7 +1,6 @@
 import { supabase } from '../config/supabaseClient';
 
 export const sucursalesRepository = {
-  // Listar todas las sucursales agrupadas por ruta
   async listar() {
     const { data, error } = await supabase
       .from('sucursales')
@@ -13,7 +12,6 @@ export const sucursalesRepository = {
     return data || [];
   },
 
-  // Obtener las rutas existentes leidas de la base
   async listarSectores() {
     const { data, error } = await supabase
       .from('sucursales')

@@ -1,7 +1,3 @@
--- Agrega pedidos a Realtime para que las sucursales reciban cambios
--- de estado sin esperar al refresco periodico del navegador.
--- Se puede ejecutar mas de una vez.
-
 DO $$
 BEGIN
   IF NOT EXISTS (

@@ -1,18 +1,3 @@
--- ============================================================
---  ARREGLAR COLUMNAS QUE FALTAN (FORMULARIOS.sql no se aplico)
--- ------------------------------------------------------------
---  Corrige errores como:
---    column "precio_por_kilo" of relation "despacho_pollo"
---    does not exist
---
---  Causa: en la base solo corrio instalar.sql. FORMULARIOS.sql
---  (y MAPA_UBICACION.sql para GPS) agregan columnas que el
---  formulario de despacho/recepcion necesita. Aca se agregan
---  todas de una, con ADD COLUMN IF NOT EXISTS: no borra datos
---  y se puede correr varias veces.
--- ============================================================
-
--- Recepcion de pollo (lote del proveedor)
 DO $$
 BEGIN
   IF to_regclass('public.recepcion_pollo') IS NOT NULL THEN
@@ -30,7 +15,6 @@ BEGIN
   END IF;
 END $$;
 
--- Despacho (carga hacia la sucursal)
 DO $$
 BEGIN
   IF to_regclass('public.despacho_pollo') IS NOT NULL THEN
@@ -45,7 +29,6 @@ BEGIN
       ADD COLUMN IF NOT EXISTS latitude NUMERIC(10,7),
       ADD COLUMN IF NOT EXISTS longitude NUMERIC(10,7);
 
-    -- total calculado (va aparte: depende de precio_por_kilo)
     ALTER TABLE public.despacho_pollo
       ADD COLUMN IF NOT EXISTS total_monto NUMERIC(14,2)
         GENERATED ALWAYS AS (ROUND(kilos * COALESCE(precio_por_kilo, 0), 2)) STORED;
@@ -55,7 +38,6 @@ BEGIN
   END IF;
 END $$;
 
--- Recepcion en la sucursal (entrega)
 DO $$
 BEGIN
   IF to_regclass('public.pedido_recepciones') IS NOT NULL THEN
@@ -69,7 +51,6 @@ BEGIN
   END IF;
 END $$;
 
--- Pedidos: peso que se despacho (lo escribe despachar_pedido)
 DO $$
 BEGIN
   IF to_regclass('public.pedidos') IS NOT NULL THEN
@@ -80,7 +61,6 @@ END $$;
 
 NOTIFY pgrst, 'reload schema';
 
--- Verificacion: las 5 columnas de despacho_pollo deben salir "ok"
 SELECT
   CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns
      WHERE table_schema='public' AND table_name='despacho_pollo' AND column_name='precio_por_kilo')

@@ -1,17 +1,3 @@
--- ============================================================
---  ARREGLAR: confirmar_recepcion_pedido
---  La sucursal confirma la entrega. El frontend llama la version
---  de 9 parametros (con p_fotos_extra, p_latitude y p_longitud),
---  pero en la base no existe -> "Could not find the function
---  public.confirmar_recepcion_pedido(...) in the schema cache".
---
---  Este archivo borra cualquier overload viejo y deja la version
---  buena. Requiere:
---    - public.verificar_archivo(...)        (ARREGLAR_HELPERS_EVIDENCIA.sql)
---    - public.validar_fotos_extra(...)      (ARREGLAR_HELPERS_EVIDENCIA.sql)
---    - columnas de pedido_recepciones       (ARREGLAR_COLUMNAS_FORMULARIOS.sql)
--- ============================================================
-
 DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT);
 DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT, TEXT);
 DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, NUMERIC, TEXT);
@@ -92,8 +78,6 @@ BEGIN
 
   v_faltantes := p_unidades_recibidas < v_pedido_unidades;
 
-  -- La carga que ya existe queda como recibida. No se inserta otra
-  -- fila, porque el inventario sumaria los kilos dos veces.
   UPDATE public.despacho_pollo
      SET estado_recepcion = 'RECIBIDO'
    WHERE pedido_id = p_pedido_id;
@@ -130,7 +114,6 @@ GRANT EXECUTE ON FUNCTION public.confirmar_recepcion_pedido(
 
 NOTIFY pgrst, 'reload schema';
 
--- Verificacion: debe listar exactamente una version de 9 argumentos.
 SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS argumentos
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
