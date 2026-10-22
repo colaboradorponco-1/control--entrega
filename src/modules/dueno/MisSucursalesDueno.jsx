@@ -4,11 +4,13 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { authRepository } from '../../repositories/AuthRepository';
 import { pedidosRepository } from '../../repositories/pedidosRepository';
+import { evidenciasRepository } from '../../repositories/evidenciasRepository';
 import { supabase } from '../../config/supabaseClient';
 import SeguimientoRepartidor from '../../components/SeguimientoRepartidor';
 import {
   ArrowLeft, LogOut, Sun, Moon, MapPin, Loader2, Crown,
   TrendingUp, Boxes, AlertCircle, Search, Plus, X, ShoppingCart,
+  History, ChevronDown, ChevronUp, Camera, Archive, ArchiveRestore, Trash2,
 } from 'lucide-react';
 
 const fechaHoyBolivia = () => {
@@ -23,6 +25,7 @@ const fechaHoyBolivia = () => {
 };
 
 const ESTADOS_PROGRESO = ['PENDIENTE', 'APROBADO', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO'];
+const ESTADOS_FINALES = ['ENTREGADO', 'CANCELADO', 'RECHAZADO'];
 const ETIQUETA_ESTADO = {
   PENDIENTE: 'Pendiente',
   APROBADO: 'Aprobado',
@@ -32,6 +35,13 @@ const ETIQUETA_ESTADO = {
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
   RECHAZADO: 'Rechazado',
+};
+const ETIQUETA_ESTADO_PRODUCTO = {
+  FRESCO: 'Fresco y refrigerado',
+  TIBIO: 'Fresco, pero tibio',
+  EMBALAJE: 'Embalaje dañado o húmedo',
+  DETERIORO: 'Presenta deterioro',
+  OTRO: 'Otro',
 };
 
 export default function MisSucursalesDueno() {
@@ -56,6 +66,14 @@ export default function MisSucursalesDueno() {
   const [busquedaSucursal, setBusquedaSucursal] = useState('');
   const [disponibilidad, setDisponibilidad] = useState(null);
   const [cargandoDisponibilidad, setCargandoDisponibilidad] = useState(false);
+  const [filtroEstado, setFiltroEstado] = useState('TODOS');
+  const [filtroDesde, setFiltroDesde] = useState('');
+  const [filtroHasta, setFiltroHasta] = useState('');
+  const [verArchivados, setVerArchivados] = useState(false);
+  const [expandidoId, setExpandidoId] = useState(null);
+  const [procesandoId, setProcesandoId] = useState(null);
+  const [fotoUrl, setFotoUrl] = useState(null);
+  const [cargandoFoto, setCargandoFoto] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -196,26 +214,102 @@ export default function MisSucursalesDueno() {
     }
   };
 
+  const visibles = useMemo(
+    () => datos.filter((p) => Boolean(p.archivado) === verArchivados),
+    [datos, verArchivados]
+  );
+
   const filtrados = useMemo(() => {
     const t = busqueda.trim().toLowerCase();
-    if (!t) return datos;
-    return datos.filter(
-      (p) =>
+    return visibles.filter((p) => {
+      if (filtroEstado !== 'TODOS' && p.estado !== filtroEstado) return false;
+      const fecha = p.fecha || (p.creado_en ? p.creado_en.slice(0, 10) : '');
+      if (filtroDesde && fecha < filtroDesde) return false;
+      if (filtroHasta && fecha > filtroHasta) return false;
+      if (!t) return true;
+      return (
         String(p.id).includes(t) ||
         (p.sucursales?.nombre || '').toLowerCase().includes(t) ||
         (p.estado || '').toLowerCase().includes(t)
-    );
-  }, [datos, busqueda]);
+      );
+    });
+  }, [visibles, busqueda, filtroEstado, filtroDesde, filtroHasta]);
+
+  const resumenSucursales = useMemo(() => {
+    const mapa = new Map();
+    for (const p of visibles) {
+      const clave = p.sucursal_id;
+      const item = mapa.get(clave) || {
+        id: clave,
+        nombre: p.sucursales?.nombre || `Sucursal ${clave}`,
+        pedidos: 0,
+        unidades: 0,
+        kilos: 0,
+        pendientes: 0,
+      };
+      item.pedidos += 1;
+      item.unidades += parseInt(p.unidades, 10) || 0;
+      item.kilos += parseFloat(p.kilos_despachados) || 0;
+      if (!ESTADOS_FINALES.includes(p.estado)) item.pendientes += 1;
+      mapa.set(clave, item);
+    }
+    return [...mapa.values()].sort((a, b) => b.pedidos - a.pedidos);
+  }, [visibles]);
+
+  const archivarPedido = async (pedido) => {
+    try {
+      setProcesandoId(pedido.id);
+      await pedidosRepository.archivar(pedido.id, !verArchivados);
+      setMensaje(
+        verArchivados
+          ? `Pedido #${pedido.id} restaurado al historial.`
+          : `Pedido #${pedido.id} archivado.`
+      );
+      setExpandidoId(null);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setError(err.message || 'No se pudo archivar el pedido');
+    } finally {
+      setProcesandoId(null);
+    }
+  };
+
+  const eliminarPedido = async (pedido) => {
+    if (!window.confirm(`¿Borrar definitivamente el pedido #${pedido.id}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      setProcesandoId(pedido.id);
+      await pedidosRepository.eliminarArchivado(pedido.id);
+      setMensaje(`Pedido #${pedido.id} eliminado.`);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setError(err.message || 'No se pudo eliminar el pedido');
+    } finally {
+      setProcesandoId(null);
+    }
+  };
+
+  const verFoto = async (ruta) => {
+    try {
+      setCargandoFoto(true);
+      setFotoUrl(await evidenciasRepository.url(ruta));
+    } catch (err) {
+      setError(err.message || 'No se pudo abrir la foto');
+    } finally {
+      setCargandoFoto(false);
+    }
+  };
 
   const metricas = useMemo(() => {
     const num = (v) => parseFloat(v) || 0;
     return {
-      pedidos: datos.length,
-      unidades: datos.reduce((a, p) => a + (parseInt(p.unidades) || 0), 0),
-      kilos: datos.reduce((a, p) => a + num(p.kilos_despachados), 0),
-      pendientes: datos.filter((p) => p.estado !== 'ENTREGADO').length,
+      pedidos: visibles.length,
+      unidades: visibles.reduce((a, p) => a + (parseInt(p.unidades) || 0), 0),
+      kilos: visibles.reduce((a, p) => a + num(p.kilos_despachados), 0),
+      pendientes: visibles.filter((p) => !ESTADOS_FINALES.includes(p.estado)).length,
     };
-  }, [datos]);
+  }, [visibles]);
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-slate-950 text-slate-200' : 'bg-gray-50 text-gray-800'}`}>
@@ -411,6 +505,44 @@ export default function MisSucursalesDueno() {
           )}
         </div>
 
+        {resumenSucursales.length > 0 && (
+          <div className="mb-6">
+            <p className={`mb-2 text-xs font-bold uppercase tracking-wider ${muted}`}>
+              {verArchivados ? 'Archivados por sucursal' : 'Resumen por sucursal'}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {resumenSucursales.map((s) => (
+                <div key={s.id} className={`${card} rounded-2xl border p-4`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className={`truncate text-sm font-bold ${strong}`}>{s.nombre}</p>
+                    <MapPin size={15} className="shrink-0 text-amber-500" />
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                    <div>
+                      <p className={`text-lg font-black ${strong}`}>{s.pedidos}</p>
+                      <p className={`text-[10px] uppercase tracking-wider ${muted}`}>Pedidos</p>
+                    </div>
+                    <div>
+                      <p className={`text-lg font-black ${strong}`}>{s.unidades}</p>
+                      <p className={`text-[10px] uppercase tracking-wider ${muted}`}>Unid.</p>
+                    </div>
+                    <div>
+                      <p className={`text-lg font-black ${strong}`}>{s.kilos.toFixed(1)}</p>
+                      <p className={`text-[10px] uppercase tracking-wider ${muted}`}>Kg</p>
+                    </div>
+                    <div>
+                      <p className={`text-lg font-black ${s.pendientes ? 'text-amber-500' : 'text-emerald-500'}`}>
+                        {s.pendientes}
+                      </p>
+                      <p className={`text-[10px] uppercase tracking-wider ${muted}`}>Pend.</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="relative max-w-md flex-1">
@@ -432,6 +564,53 @@ export default function MisSucursalesDueno() {
               </button>
             )}
           </div>
+
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className={`text-[11px] font-semibold uppercase tracking-wider ${muted}`}>
+              Estado
+              <select
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
+                className={`mt-1 block rounded-xl border px-3 py-2 text-xs font-semibold normal-case ${input}`}
+              >
+                <option value="TODOS">Todos</option>
+                {Object.entries(ETIQUETA_ESTADO).map(([valor, etiqueta]) => (
+                  <option key={valor} value={valor}>{etiqueta}</option>
+                ))}
+              </select>
+            </label>
+            <label className={`text-[11px] font-semibold uppercase tracking-wider ${muted}`}>
+              Desde
+              <input
+                type="date"
+                value={filtroDesde}
+                onChange={(e) => setFiltroDesde(e.target.value)}
+                className={`mt-1 block rounded-xl border px-3 py-2 text-xs normal-case ${input}`}
+              />
+            </label>
+            <label className={`text-[11px] font-semibold uppercase tracking-wider ${muted}`}>
+              Hasta
+              <input
+                type="date"
+                value={filtroHasta}
+                onChange={(e) => setFiltroHasta(e.target.value)}
+                className={`mt-1 block rounded-xl border px-3 py-2 text-xs normal-case ${input}`}
+              />
+            </label>
+            {esDueño && !sinVinculo && (
+              <button
+                type="button"
+                onClick={() => {
+                  setVerArchivados((valor) => !valor);
+                  setExpandidoId(null);
+                }}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition ${input}`}
+              >
+                {verArchivados ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                {verArchivados ? 'Ver activos' : 'Ver archivados'}
+              </button>
+            )}
+          </div>
         </div>
 
         {cargando ? (
@@ -444,7 +623,11 @@ export default function MisSucursalesDueno() {
             <MapPin size={40} className={`mx-auto mb-4 ${muted}`} />
             <p className={`font-bold mb-2 ${strong}`}>Sin pedidos para mostrar</p>
             <p className={`text-sm ${muted}`}>
-              {busqueda ? 'No hay resultados para esa búsqueda.' : 'Todavía no hay pedidos en tus sucursales.'}
+              {busqueda || filtroEstado !== 'TODOS' || filtroDesde || filtroHasta
+                ? 'No hay resultados con esos filtros.'
+                : verArchivados
+                  ? 'No hay pedidos archivados.'
+                  : 'Todavía no hay pedidos en tus sucursales.'}
             </p>
           </div>
         ) : (
@@ -458,7 +641,8 @@ export default function MisSucursalesDueno() {
                   <th className={`text-right px-4 py-3 font-black text-xs uppercase tracking-wider ${muted}`}>Unidades</th>
                   <th className={`text-right px-4 py-3 font-black text-xs uppercase tracking-wider ${muted}`}>Kilos</th>
                   <th className={`text-left px-4 py-3 font-black text-xs uppercase tracking-wider ${muted}`}>Estado</th>
-                  <th className={`text-left px-4 py-3 font-black text-xs uppercase tracking-wider ${muted}`}>Observaciones de entrega</th>
+                  <th className={`text-left px-4 py-3 font-black text-xs uppercase tracking-wider ${muted}`}>Reporte de entrega</th>
+                  <th className={`text-left px-4 py-3 font-black text-xs uppercase tracking-wider ${muted}`}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -509,12 +693,157 @@ export default function MisSucursalesDueno() {
                         </div>
                       </td>
                       <td className={`px-4 py-3 text-xs ${muted}`}>
-                        {p.reporte_entrega?.observaciones_entrega || '—'}
+                        <div className="space-y-1">
+                          {p.reporte_entrega?.estado_producto && (
+                            <span className="block font-bold text-emerald-500">
+                              {ETIQUETA_ESTADO_PRODUCTO[p.reporte_entrega.estado_producto]
+                                || p.reporte_entrega.estado_producto}
+                            </span>
+                          )}
+                          <span className="block max-w-56">
+                            {p.reporte_entrega?.observaciones_entrega || '—'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setExpandidoId(expandidoId === p.id ? null : p.id)}
+                            className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition ${input}`}
+                          >
+                            {expandidoId === p.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            {expandidoId === p.id ? 'Ocultar' : 'Ver detalle'}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {esDueño && !sinVinculo && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {ESTADOS_FINALES.includes(p.estado) && (
+                              <button
+                                type="button"
+                                onClick={() => archivarPedido(p)}
+                                disabled={procesandoId === p.id}
+                                className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition disabled:opacity-50 ${input}`}
+                              >
+                                {verArchivados ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+                                {verArchivados ? 'Restaurar' : 'Archivar'}
+                              </button>
+                            )}
+                            {verArchivados && (
+                              <button
+                                type="button"
+                                onClick={() => eliminarPedido(p)}
+                                disabled={procesandoId === p.id}
+                                className="flex items-center gap-1 rounded-lg border border-red-500/30 px-2 py-1 text-[11px] font-bold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
+                              >
+                                <Trash2 size={12} /> Borrar
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
+                    {expandidoId === p.id && (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className={`px-4 pb-4 pt-1 ${darkMode ? 'bg-slate-950/40' : 'bg-gray-50/60'}`}
+                        >
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <p className={`mb-2 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider ${muted}`}>
+                                <History size={12} /> Historial de estados
+                              </p>
+                              {p.historial_estado?.length ? (
+                                <ol className="space-y-1.5">
+                                  {p.historial_estado.map((evento) => (
+                                    <li key={evento.id} className="flex flex-wrap items-center gap-2 text-xs">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                      <span className={`font-semibold ${strong}`}>
+                                        {ETIQUETA_ESTADO[evento.estado] || evento.estado}
+                                      </span>
+                                      <span className={muted}>
+                                        {evento.cambiado_en
+                                          ? new Date(evento.cambiado_en).toLocaleString('es-BO', {
+                                            day: '2-digit',
+                                            month: '2-digit',
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                          })
+                                          : ''}
+                                      </span>
+                                      {evento.cambiado_por_nombre && (
+                                        <span className={muted}>· {evento.cambiado_por_nombre}</span>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ol>
+                              ) : (
+                                <p className={`text-xs ${muted}`}>Sin historial registrado.</p>
+                              )}
+                            </div>
+                            <div>
+                              <p className={`mb-2 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider ${muted}`}>
+                                <Camera size={12} /> Reporte de entrega
+                              </p>
+                              {p.reporte_entrega ? (
+                                <div className={`space-y-1.5 text-xs ${normal}`}>
+                                  {p.reporte_entrega.estado_producto && (
+                                    <p>
+                                      Estado del pollo:{' '}
+                                      <span className={`font-bold ${strong}`}>
+                                        {ETIQUETA_ESTADO_PRODUCTO[p.reporte_entrega.estado_producto]
+                                          || p.reporte_entrega.estado_producto}
+                                      </span>
+                                    </p>
+                                  )}
+                                  {p.reporte_entrega.observaciones_entrega && (
+                                    <p className="whitespace-pre-wrap">
+                                      “{p.reporte_entrega.observaciones_entrega}”
+                                    </p>
+                                  )}
+                                  {p.reporte_entrega.fotos_observaciones?.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                      {p.reporte_entrega.fotos_observaciones.map((ruta) => (
+                                        <button
+                                          key={ruta}
+                                          type="button"
+                                          onClick={() => verFoto(ruta)}
+                                          className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition ${input}`}
+                                        >
+                                          <Camera size={12} /> Ver foto
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {p.reporte_entrega.observaciones_entrega_en && (
+                                    <p className={`text-[10px] ${muted}`}>
+                                      Enviado el{' '}
+                                      {new Date(p.reporte_entrega.observaciones_entrega_en).toLocaleString('es-BO', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })}
+                                    </p>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className={`text-xs ${muted}`}>
+                                  La sucursal todavía no envió un reporte.
+                                </p>
+                              )}
+                              {p.motivo_rechazo && (
+                                <p className="mt-2 text-xs font-semibold text-rose-400">
+                                  Motivo del rechazo: {p.motivo_rechazo}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {p.estado === 'RECOGIDO' && (
                       <tr>
-                        <td colSpan={7} className="px-4 pb-4">
+                        <td colSpan={8} className="px-4 pb-4">
                           <SeguimientoRepartidor pedido={p} darkMode={darkMode} />
                         </td>
                       </tr>
@@ -526,6 +855,25 @@ export default function MisSucursalesDueno() {
           </div>
         )}
       </div>
+
+      {fotoUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setFotoUrl(null)}
+          role="presentation"
+        >
+          <img
+            src={fotoUrl}
+            alt="Evidencia del reporte de entrega"
+            className="max-h-[85vh] max-w-full rounded-xl shadow-2xl"
+          />
+        </div>
+      )}
+      {cargandoFoto && (
+        <div className="fixed bottom-5 right-5 z-[70] flex items-center gap-2 rounded-xl border border-amber-500/40 bg-slate-900/90 px-3 py-2 text-xs font-bold text-amber-300">
+          <Loader2 size={14} className="animate-spin" /> Abriendo foto...
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { supabase } from '../config/supabaseClient';
 import { evidenciasRepository } from './evidenciasRepository';
 import { esColumnaFaltante } from './columnaFalta';
 
-const CAMPOS_PEDIDO_SIN_EVIDENCIA = `
+const CAMPOS_PEDIDO_BASE = `
   id,
   sucursal_id,
   fecha,
@@ -14,18 +14,36 @@ const CAMPOS_PEDIDO_SIN_EVIDENCIA = `
   sucursales ( nombre, sector, latitude, longitude )
 `;
 
-const CAMPOS_PEDIDO_COMPLETO = `
-  id,
-  sucursal_id,
-  fecha,
-  unidades,
+const CAMPOS_PEDIDO_SIN_EVIDENCIA = `
+  ${CAMPOS_PEDIDO_BASE},
   kilos_despachados,
-  estado,
   motivo_rechazo,
-  observaciones,
-  creado_en,
-  actualizado_en,
-  sucursales ( nombre, sector, latitude, longitude ),
+  archivado,
+  archivado_en
+`;
+
+const CAMPOS_PEDIDO_SIN_ARCHIVO = `
+  ${CAMPOS_PEDIDO_BASE},
+  kilos_despachados,
+  motivo_rechazo,
+  pedido_recepciones (
+    unidades_recibidas,
+    faltantes,
+    observaciones,
+    recibido_por_nombre,
+    recibido_en,
+    foto_url,
+    firma_url,
+    fotos_extra
+  )
+`;
+
+const CAMPOS_PEDIDO_COMPLETO = `
+  ${CAMPOS_PEDIDO_BASE},
+  kilos_despachados,
+  motivo_rechazo,
+  archivado,
+  archivado_en,
   pedido_recepciones (
     unidades_recibidas,
     faltantes,
@@ -58,11 +76,28 @@ export const pedidosRepository = {
       return query;
     };
 
+    // Si la base todavia no tiene las columnas nuevas se reintenta
+    // sin ellas, para que la pantalla no quede en blanco mientras se
+    // corre el SQL de archivado o de reportes.
     let { data, error } = await consultar(CAMPOS_PEDIDO_COMPLETO);
     if (error && esColumnaFaltante(error.message)) {
-      const alternativa = await consultar(CAMPOS_PEDIDO_SIN_EVIDENCIA);
-      if (!alternativa.error) {
-        data = alternativa.data;
+      const sinArchivo = await consultar(CAMPOS_PEDIDO_SIN_ARCHIVO);
+      if (!sinArchivo.error) {
+        data = sinArchivo.data;
+        error = null;
+      }
+    }
+    if (error && esColumnaFaltante(error.message)) {
+      const sinEvidencia = await consultar(CAMPOS_PEDIDO_SIN_EVIDENCIA);
+      if (!sinEvidencia.error) {
+        data = sinEvidencia.data;
+        error = null;
+      }
+    }
+    if (error && esColumnaFaltante(error.message)) {
+      const base = await consultar(CAMPOS_PEDIDO_BASE);
+      if (!base.error) {
+        data = base.data;
         error = null;
       }
     }
@@ -288,6 +323,35 @@ export const pedidosRepository = {
 
     if (error) throw error;
     return data;
+  },
+
+  // Archivar quita el pedido del historial sin borrarlo. Con
+  // archivado=false vuelve al historial.
+  async archivar(pedidoId, archivado = true) {
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({
+        archivado,
+        archivado_en: archivado ? new Date().toISOString() : null,
+      })
+      .eq('id', pedidoId)
+      .select('id, archivado, archivado_en')
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
+  // Borrar definitivamente un pedido archivado. La base solo deja
+  // borrar los que estan archivados (ver ARCHIVAR_PEDIDOS_SUCURSAL.sql).
+  async eliminarArchivado(pedidoId) {
+    const { error } = await supabase
+      .from('pedidos')
+      .delete()
+      .eq('id', pedidoId)
+      .eq('archivado', true);
+
+    if (error) throw error;
   },
 
   // Ver la foto o la firma. Los archivos son privados, asi que

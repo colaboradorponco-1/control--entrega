@@ -9,12 +9,11 @@ import { supabase } from '../../config/supabaseClient';
 import {
   LogOut, Sun, Moon, X, ArrowLeft, CheckCircle, AlertCircle,
   ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban,
-  Camera, FileCheck2, Images, RefreshCw, Bell, Store, Inbox,
-  History, XCircle
+  Camera, FileCheck2, Images, RefreshCw, Bell, Inbox,
+  History, XCircle, ChevronDown, Archive, ArchiveRestore, Trash2
 } from 'lucide-react';
 import FotosObservaciones from '../../components/FotosObservaciones';
 import FormularioRecepcion from '../../components/FormularioRecepcion';
-import EntregasDirectas from './EntregasDirectas';
 
 const ESTADOS = {
   PENDIENTE: { label: 'Pendiente', badge: 'bg-amber-500/10 text-amber-500 border-amber-500/20', icon: ShoppingCart },
@@ -97,6 +96,13 @@ export default function PedidosSucursal() {
   const [rechazando, setRechazando] = useState(null);
   const [motivoRechazo, setMotivoRechazo] = useState('');
   const [enviandoRechazo, setEnviandoRechazo] = useState(false);
+  const [expandidoHistorial, setExpandidoHistorial] = useState(null);
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const [verArchivados, setVerArchivados] = useState(false);
+  const [procesandoArchivo, setProcesandoArchivo] = useState(null);
+  const [porEliminar, setPorEliminar] = useState(null);
+  const [eliminando, setEliminando] = useState(false);
 
   const [recibiendo, setRecibiendo] = useState(null);
   const [formRecepcion, setFormRecepcion] = useState({
@@ -219,7 +225,38 @@ export default function PedidosSucursal() {
   }, [mensaje]);
 
   const activos = useMemo(() => pedidos.filter((p) => !ESTADOS_FINALIZADOS.includes(p.estado)), [pedidos]);
-  const historicos = useMemo(() => pedidos.filter((p) => ESTADOS_FINALIZADOS.includes(p.estado)), [pedidos]);
+  const historicos = useMemo(
+    () => pedidos.filter((p) => ESTADOS_FINALIZADOS.includes(p.estado) && !p.archivado),
+    [pedidos]
+  );
+  const archivados = useMemo(() => pedidos.filter((p) => Boolean(p.archivado)), [pedidos]);
+
+  const filtrarPorFecha = useCallback((lista) => {
+    if (!fechaDesde && !fechaHasta) return lista;
+    return lista.filter((pedido) => {
+      const fecha = new Date(pedido.creado_en);
+      if (Number.isNaN(fecha.getTime())) return true;
+      if (fechaDesde) {
+        const desde = new Date(`${fechaDesde}T00:00:00`);
+        if (fecha < desde) return false;
+      }
+      if (fechaHasta) {
+        const hasta = new Date(`${fechaHasta}T23:59:59.999`);
+        if (fecha > hasta) return false;
+      }
+      return true;
+    });
+  }, [fechaDesde, fechaHasta]);
+
+  const historicosFiltrados = useMemo(
+    () => filtrarPorFecha(historicos),
+    [filtrarPorFecha, historicos]
+  );
+  const archivadosFiltrados = useMemo(
+    () => filtrarPorFecha(archivados),
+    [filtrarPorFecha, archivados]
+  );
+  const listaHistorial = verArchivados ? archivadosFiltrados : historicosFiltrados;
   const resumen = useMemo(() => ({
     pendientes: pedidos.filter((p) => p.estado === 'PENDIENTE').length,
     enCamino: pedidos.filter((p) => p.estado === 'RECOGIDO').length,
@@ -276,6 +313,42 @@ export default function PedidosSucursal() {
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudo rechazar el pedido' });
     } finally {
       setEnviandoRechazo(false);
+    }
+  };
+
+  // Archivar no borra: el pedido sale del historial y queda en la
+  // pestana de archivados, donde recien se puede eliminar.
+  const handleArchivar = async (pedido, archivado) => {
+    try {
+      setProcesandoArchivo(pedido.id);
+      await pedidosRepository.archivar(pedido.id, archivado);
+      setMensaje({
+        tipo: 'exito',
+        texto: archivado
+          ? `Pedido #${pedido.id} archivado.`
+          : `Pedido #${pedido.id} restaurado al historial.`,
+      });
+      if (archivado && expandidoHistorial === pedido.id) setExpandidoHistorial(null);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo archivar el pedido' });
+    } finally {
+      setProcesandoArchivo(null);
+    }
+  };
+
+  const handleEliminarArchivado = async () => {
+    if (!porEliminar) return;
+    try {
+      setEliminando(true);
+      await pedidosRepository.eliminarArchivado(porEliminar.id);
+      setMensaje({ tipo: 'exito', texto: `Pedido #${porEliminar.id} eliminado definitivamente.` });
+      setPorEliminar(null);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar el pedido' });
+    } finally {
+      setEliminando(false);
     }
   };
 
@@ -784,52 +857,204 @@ export default function PedidosSucursal() {
   // El historial se muestra en su propia pestana: los pedidos que ya
   // terminaron, con la fecha de entrega y el reporte que mando la
   // sucursal.
-  const renderHistorial = (item) => {
+  const renderHistorial = (item, archivado = false) => {
     const estadoInfo = ESTADOS[item.estado] || ESTADOS.PENDIENTE;
     const IconoHistorial = estadoInfo.icon;
     const recepcionHistorial = item.pedido_recepciones?.[0];
     const reporteHistorial = item.reporte_entrega;
+    const abierto = expandidoHistorial === item.id;
+    const enProceso = procesandoArchivo === item.id;
 
     return (
-      <div key={item.id} className={`${card} border rounded-2xl p-4`}>
-        <div className="flex items-start gap-3">
-          <span className={`p-2.5 rounded-xl border shrink-0 ${estadoInfo.badge}`}>
-            <IconoHistorial size={17} />
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-sm font-black ${strong}`}>Pedido #{item.id}</span>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${estadoInfo.badge}`}>
-                {estadoInfo.label}
-              </span>
-            </div>
-            <p className={`mt-1 text-xs ${muted}`}>
-              {item.unidades} unidades · pedido el {new Date(item.creado_en).toLocaleDateString('es-BO')}
-              {recepcionHistorial?.recibido_en
-                ? ` · recibido el ${new Date(recepcionHistorial.recibido_en).toLocaleString('es-BO', {
-                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                })}`
-                : ''}
-            </p>
-            {reporteHistorial?.estado_producto && (
-              <p className={`mt-2 text-xs ${normal}`}>
-                Estado del pollo:{' '}
-                <span className="font-bold">
-                  {ETIQUETA_ESTADO_PRODUCTO[reporteHistorial.estado_producto] || reporteHistorial.estado_producto}
+      <div key={item.id} className={`${card} border rounded-2xl overflow-hidden`}>
+        <button
+          type="button"
+          onClick={() => setExpandidoHistorial(abierto ? null : item.id)}
+          aria-expanded={abierto}
+          className="w-full p-4 text-left"
+        >
+          <div className="flex items-start gap-3">
+            <span className={`p-2.5 rounded-xl border shrink-0 ${estadoInfo.badge}`}>
+              <IconoHistorial size={17} />
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-sm font-black ${strong}`}>Pedido #{item.id}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${estadoInfo.badge}`}>
+                  {estadoInfo.label}
                 </span>
+                {archivado && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${darkMode ? 'border-slate-700 text-slate-400' : 'border-gray-300 text-gray-500'}`}>
+                    Archivado
+                  </span>
+                )}
+              </div>
+              <p className={`mt-1 text-xs ${muted}`}>
+                {item.unidades} unidades · pedido el {new Date(item.creado_en).toLocaleDateString('es-BO')}
+                {recepcionHistorial?.recibido_en
+                  ? ` · recibido el ${new Date(recepcionHistorial.recibido_en).toLocaleString('es-BO', {
+                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                  })}`
+                  : ''}
               </p>
+            </div>
+            <span className={`p-1.5 rounded-lg border shrink-0 ${darkMode ? 'border-slate-800 text-slate-400' : 'border-gray-200 text-gray-500'}`}>
+              <ChevronDown size={16} className={`transition-transform ${abierto ? 'rotate-180' : ''}`} />
+            </span>
+          </div>
+        </button>
+
+        {abierto && (
+          <div className={`space-y-3 border-t px-4 pb-4 pt-3 ${darkMode ? 'border-slate-800' : 'border-gray-200'}`}>
+            {item.observaciones && (
+              <p className={`text-xs italic ${muted}`}>“{item.observaciones}”</p>
             )}
-            {reporteHistorial?.observaciones_entrega && (
-              <p className={`mt-1 whitespace-pre-wrap text-sm ${normal}`}>“{reporteHistorial.observaciones_entrega}”</p>
+
+            {reporteHistorial?.observaciones_entrega || reporteHistorial?.estado_producto ? (
+              <div className={`rounded-xl border p-3 ${darkMode ? 'border-purple-900/60 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Reporte de entrega</p>
+                {reporteHistorial.estado_producto && (
+                  <p className={`mt-1 text-xs ${normal}`}>
+                    Estado del pollo:{' '}
+                    <span className="font-bold">
+                      {ETIQUETA_ESTADO_PRODUCTO[reporteHistorial.estado_producto] || reporteHistorial.estado_producto}
+                    </span>
+                  </p>
+                )}
+                {reporteHistorial.observaciones_entrega && (
+                  <p className={`mt-1 whitespace-pre-wrap text-sm ${normal}`}>{reporteHistorial.observaciones_entrega}</p>
+                )}
+                {reporteHistorial.fotos_observaciones?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {reporteHistorial.fotos_observaciones.map((ruta) => (
+                      <button
+                        key={ruta}
+                        type="button"
+                        onClick={() => verEvidencia('Foto del reporte de entrega', ruta)}
+                        className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition ${input}`}
+                      >
+                        <Images size={12} /> Ver foto
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className={`text-[11px] ${muted}`}>La sucursal no envió reporte de entrega.</p>
             )}
+
+            {recepcionHistorial && (
+              <div className={`rounded-xl border p-3 ${darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-gray-200 bg-gray-50'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Recepción</p>
+                <p className={`mt-1 text-xs ${normal}`}>
+                  {recepcionHistorial.unidades_recibidas} unidades recibidas
+                  {recepcionHistorial.recibido_por_nombre
+                    ? ` · recibió ${recepcionHistorial.recibido_por_nombre}`
+                    : ''}
+                </p>
+                {recepcionHistorial.faltantes && (
+                  <p className="mt-1 text-xs font-bold text-amber-500">
+                    Con faltantes: se pidieron {item.unidades} y llegaron {recepcionHistorial.unidades_recibidas}
+                  </p>
+                )}
+                {recepcionHistorial.observaciones && (
+                  <p className={`mt-1 text-xs italic ${muted}`}>“{recepcionHistorial.observaciones}”</p>
+                )}
+                {(recepcionHistorial.foto_url || recepcionHistorial.firma_url || recepcionHistorial.fotos_extra?.length > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {recepcionHistorial.foto_url && (
+                      <button
+                        type="button"
+                        onClick={() => verEvidencia('Foto de la entrega', recepcionHistorial.foto_url)}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${input}`}
+                      >
+                        <Camera size={12} /> Ver foto
+                      </button>
+                    )}
+                    {recepcionHistorial.firma_url && (
+                      <button
+                        type="button"
+                        onClick={() => verEvidencia('Firma de recepción', recepcionHistorial.firma_url)}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${input}`}
+                      >
+                        <FileCheck2 size={12} /> Ver firma
+                      </button>
+                    )}
+                    {recepcionHistorial.fotos_extra?.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => verEvidencia(`Fotos de apoyo (${recepcionHistorial.fotos_extra.length})`, recepcionHistorial.fotos_extra[0])}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${input}`}
+                      >
+                        <Images size={12} /> +{recepcionHistorial.fotos_extra.length} fotos
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {item.estado === 'RECHAZADO' && item.motivo_rechazo && (
-              <p className={`mt-2 rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs ${normal}`}>
+              <p className={`rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs ${normal}`}>
                 <span className="font-bold text-rose-400">Motivo del rechazo: </span>
                 {item.motivo_rechazo}
               </p>
             )}
+
+            {item.historial_estado?.length > 0 && (
+              <details className={`rounded-xl border ${darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-gray-200 bg-gray-50'}`}>
+                <summary className={`cursor-pointer px-3 py-2 text-xs font-bold ${normal}`}>
+                  Historial de actualizaciones ({item.historial_estado.length})
+                </summary>
+                <ol className="space-y-2 px-3 pb-3 pt-1">
+                  {[...item.historial_estado].reverse().map((evento) => (
+                    <li key={evento.id} className={`text-[11px] ${muted}`}>
+                      <span className={`font-semibold ${strong}`}>
+                        {ESTADOS[evento.estado]?.label || evento.estado}
+                      </span>
+                      {' · '}
+                      {new Date(evento.cambiado_en).toLocaleString('es-BO', {
+                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                      {evento.cambiado_por_nombre ? ` · ${evento.cambiado_por_nombre}` : ''}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {archivado ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleArchivar(item, false)}
+                    disabled={enProceso}
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition disabled:opacity-60 ${input}`}
+                  >
+                    <ArchiveRestore size={14} /> Restaurar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPorEliminar(item)}
+                    className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-500 transition hover:bg-rose-500/20"
+                  >
+                    <Trash2 size={14} /> Eliminar
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleArchivar(item, true)}
+                  disabled={enProceso}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition disabled:opacity-60 ${input}`}
+                >
+                  <Archive size={14} /> {enProceso ? 'Archivando...' : 'Archivar'}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -852,13 +1077,11 @@ export default function PedidosSucursal() {
               </div>
               <div className="min-w-0">
                 <h1 className={`text-base md:text-xl font-black tracking-tight truncate ${strong}`}>
-                  {vista === 'entregas'
-                    ? 'Entregas directas'
-                    : vista === 'historial'
-                      ? 'Historial de pedidos'
-                      : esVistaAdmin
-                        ? 'Seguimiento de pedidos'
-                        : 'Mis Pedidos'}
+                  {vista === 'historial'
+                    ? 'Historial de pedidos'
+                    : esVistaAdmin
+                      ? 'Seguimiento de pedidos'
+                      : 'Mis Pedidos'}
                 </h1>
                 <p className={`text-[10px] md:text-xs font-medium ${muted}`}>
                   {perfil?.sucursales?.nombre || (esVistaAdmin ? 'Vista administrativa' : 'Mi sucursal')}
@@ -920,13 +1143,6 @@ export default function PedidosSucursal() {
             </button>
             <button
               type="button"
-              onClick={() => setVista('entregas')}
-              className={tabClase(vista === 'entregas')}
-            >
-              <Store size={15} /> Entregas directas
-            </button>
-            <button
-              type="button"
               onClick={() => setVista('historial')}
               className={tabClase(vista === 'historial')}
             >
@@ -937,27 +1153,6 @@ export default function PedidosSucursal() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 md:px-6 py-5 space-y-5">
-        {vista === 'entregas' ? (
-          <EntregasDirectas />
-        ) : vista === 'historial' ? (
-          <section>
-            <h2 className={`text-xs font-bold uppercase tracking-wider mb-2.5 ${muted}`}>
-              Historial de pedidos ({historicos.length})
-            </h2>
-            {historicos.length === 0 ? (
-              <div className={`${card} border rounded-2xl py-12 text-center ${muted}`}>
-                <History size={28} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm font-semibold">Todavía no hay pedidos en el historial</p>
-                <p className="text-xs mt-1">
-                  Acá van a aparecer los pedidos entregados, cancelados y rechazados
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">{historicos.map(renderHistorial)}</div>
-            )}
-          </section>
-        ) : (
-          <>
         {mensaje && (
           <div className={`flex items-start gap-3 p-4 rounded-2xl border ${
             mensaje.tipo === 'error'
@@ -971,6 +1166,95 @@ export default function PedidosSucursal() {
           </div>
         )}
 
+        {vista === 'historial' ? (
+          <section>
+            <div className={`${card} mb-3 rounded-2xl border p-3`}>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className={`flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider ${muted}`}>
+                  Desde
+                  <input
+                    type="date"
+                    value={fechaDesde}
+                    max={fechaHasta || undefined}
+                    onChange={(e) => setFechaDesde(e.target.value)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${input}`}
+                  />
+                </label>
+                <label className={`flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider ${muted}`}>
+                  Hasta
+                  <input
+                    type="date"
+                    value={fechaHasta}
+                    min={fechaDesde || undefined}
+                    onChange={(e) => setFechaHasta(e.target.value)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${input}`}
+                  />
+                </label>
+                {(fechaDesde || fechaHasta) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFechaDesde(''); setFechaHasta(''); }}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${input}`}
+                  >
+                    <X size={13} /> Limpiar
+                  </button>
+                )}
+                <div className="ml-auto flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setVerArchivados(false)}
+                    className={tabClase(!verArchivados)}
+                  >
+                    <History size={14} /> Historial ({historicosFiltrados.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVerArchivados(true)}
+                    className={tabClase(verArchivados)}
+                  >
+                    <Archive size={14} /> Archivados ({archivadosFiltrados.length})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <h2 className={`text-xs font-bold uppercase tracking-wider mb-2.5 ${muted}`}>
+              {verArchivados ? 'Pedidos archivados' : 'Historial de pedidos'} ({listaHistorial.length})
+            </h2>
+            {listaHistorial.length === 0 ? (
+              <div className={`${card} border rounded-2xl py-12 text-center ${muted}`}>
+                {verArchivados ? (
+                  <>
+                    <Archive size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-semibold">No hay pedidos archivados</p>
+                    <p className="text-xs mt-1">
+                      Archiva un pedido del historial para sacarlo de la lista principal
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <History size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-semibold">
+                      {fechaDesde || fechaHasta
+                        ? 'No hay pedidos en esas fechas'
+                        : 'Todavía no hay pedidos en el historial'}
+                    </p>
+                    <p className="text-xs mt-1">
+                      {fechaDesde || fechaHasta
+                        ? 'Prueba con otro rango de fechas'
+                        : 'Acá van a aparecer los pedidos entregados, cancelados y rechazados'}
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {listaHistorial.map((item) => renderHistorial(item, verArchivados))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <>
         {avisoPedido && (
           <div
             role="status"
@@ -1153,6 +1437,53 @@ export default function PedidosSucursal() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Borrar definitivamente un pedido archivado */}
+      {porEliminar && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${card}`}>
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-xl border bg-rose-500/10 text-rose-500 border-rose-500/20 shrink-0">
+                <Trash2 size={17} />
+              </span>
+              <div className="min-w-0">
+                <h3 className={`text-base font-black ${strong}`}>
+                  Eliminar pedido #{porEliminar.id}
+                </h3>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Se borra el pedido, su recepción y su reporte para siempre. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPorEliminar(null)}
+                disabled={eliminando}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-bold transition disabled:opacity-60 ${
+                  darkMode
+                    ? 'border-slate-800 text-slate-400 hover:bg-slate-800'
+                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleEliminarArchivado}
+                disabled={eliminando}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-60"
+              >
+                {eliminando
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : <Trash2 size={16} />}
+                {eliminando ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
