@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -7,10 +7,11 @@ import { authRepository } from '../../repositories/AuthRepository';
 import { pedidosRepository } from '../../repositories/pedidosRepository';
 import { supabase } from '../../config/supabaseClient';
 import { exportarAExcel, exportarAPDF } from '../../utils/exportUtils';
-import { ArrowLeft, LogOut, ShieldCheck, TrendingUp, Package, Truck, DollarSign, RefreshCw, FileSpreadsheet, FileText, Filter, Sun, Moon, Users, MapPin, MapPinned, Crown, Route, ShoppingCart, AlertCircle } from 'lucide-react';
+import { ArrowLeft, LogOut, ShieldCheck, TrendingUp, Package, Truck, DollarSign, RefreshCw, FileSpreadsheet, FileText, Filter, Sun, Moon, Users, MapPin, MapPinned, Crown, Route, ShoppingCart, AlertCircle, Search, X } from 'lucide-react';
 import MapaGeneral from '../../components/MapaGeneral';
 import MapaFlota from '../../components/MapaFlota';
 import SeguimientoRepartidor from '../../components/SeguimientoRepartidor';
+import PanelNotificaciones from '../../components/PanelNotificaciones';
 
 export default function DashboardAdmin() {
   const { perfil } = useAuth();
@@ -24,6 +25,9 @@ export default function DashboardAdmin() {
   const [errorPuntos, setErrorPuntos] = useState('');
   const [cargando, setCargando] = useState(true);
   const [filtroFecha, setFiltroFecha] = useState('');
+  const [busquedaMapa, setBusquedaMapa] = useState('');
+  const [filtroMapaSucursal, setFiltroMapaSucursal] = useState('todas');
+  const [filtroMapaUsuario, setFiltroMapaUsuario] = useState('todos');
   const [pedidosEnCamino, setPedidosEnCamino] = useState([]);
   const [cargandoSeguimiento, setCargandoSeguimiento] = useState(true);
   const [errorSeguimiento, setErrorSeguimiento] = useState('');
@@ -111,6 +115,42 @@ export default function DashboardAdmin() {
     ? despachos.filter(d => d.fecha === filtroFecha) 
     : despachos;
 
+  const filtrosMapaActivos =
+    busquedaMapa.trim() !== '' ||
+    filtroMapaSucursal !== 'todas' ||
+    filtroMapaUsuario !== 'todos';
+
+  const limpiarFiltrosMapa = () => {
+    setBusquedaMapa('');
+    setFiltroMapaSucursal('todas');
+    setFiltroMapaUsuario('todos');
+  };
+
+  const sucursalesMapa = useMemo(
+    () => [...new Set(puntos.map((p) => p.sucursal).filter(Boolean))].sort(),
+    [puntos]
+  );
+
+  const usuariosMapa = useMemo(
+    () => [...new Set(puntos.map((p) => p.usuario).filter(Boolean))].sort(),
+    [puntos]
+  );
+
+  const puntosMapaFiltrados = useMemo(() => {
+    const q = busquedaMapa.trim().toLowerCase();
+    return puntos.filter((p) => {
+      if (filtroMapaSucursal !== 'todas' && p.sucursal !== filtroMapaSucursal) return false;
+      if (filtroMapaUsuario !== 'todos' && p.usuario !== filtroMapaUsuario) return false;
+      if (!q) return true;
+      return (
+        p.titulo?.toLowerCase().includes(q) ||
+        p.detalle?.toLowerCase().includes(q) ||
+        p.usuario?.toLowerCase().includes(q) ||
+        p.sucursal?.toLowerCase().includes(q)
+      );
+    });
+  }, [puntos, filtroMapaSucursal, filtroMapaUsuario, busquedaMapa]);
+
   const totalKilosComprados = recepcionesFiltradas.reduce((acc, r) => acc + Number(r.kilos || 0), 0);
   const totalUnidadesCompradas = recepcionesFiltradas.reduce((acc, r) => acc + Number(r.unidades || 0), 0);
   const totalMontoGasto = recepcionesFiltradas.reduce((acc, r) => acc + Number(r.total_monto || 0), 0);
@@ -196,6 +236,9 @@ export default function DashboardAdmin() {
             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
 
+          {/* Avisos de las sucursales: solo el administrador los recibe */}
+          {perfil?.roles?.nombre === 'administrador' && <PanelNotificaciones />}
+
           <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${darkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-gray-50 border-gray-300 text-gray-800'}`}>
             <Filter size={16} className="text-amber-500" />
             <input
@@ -215,7 +258,7 @@ export default function DashboardAdmin() {
             <MapPin size={16} /> <span className="hidden lg:inline">Sucursales</span>
           </button>
           <button
-            onClick={() => navigate('/sucursal/pedidos')}
+            onClick={() => navigate('/sucursal')}
             className="flex items-center gap-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-600 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
           >
             <ShoppingCart size={16} /> <span className="hidden lg:inline">Pedidos</span>
@@ -286,7 +329,7 @@ export default function DashboardAdmin() {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/sucursal/pedidos')}
+              onClick={() => navigate('/sucursal')}
               className="rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-600 transition hover:bg-cyan-500/20"
             >
               Ver todos los pedidos
@@ -339,7 +382,7 @@ export default function DashboardAdmin() {
                     {pedido.unidades} unidades
                     {pedido.sucursales?.sector ? ` · Zona ${pedido.sucursales.sector}` : ''}
                   </p>
-                  <SeguimientoRepartidor pedido={pedido} darkMode={darkMode} />
+                  <SeguimientoRepartidor pedido={pedido} darkMode={darkMode} sinMapa />
                 </article>
               ))}
             </div>
@@ -499,6 +542,60 @@ export default function DashboardAdmin() {
           </p>
         </div>
 
+        <div className="mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className={`absolute left-3.5 top-2.5 pointer-events-none ${darkMode ? 'text-slate-500' : 'text-gray-400'}`} size={16} />
+            <input
+              type="text"
+              value={busquedaMapa}
+              onChange={(e) => setBusquedaMapa(e.target.value)}
+              placeholder="Buscar por sucursal, usuario, proveedor o tipo..."
+              className={`w-full pl-10 pr-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 transition ${
+                darkMode
+                  ? 'bg-slate-950/60 border-slate-800 text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-emerald-500/20'
+                  : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400 focus:border-emerald-500 focus:ring-emerald-500/20'
+              }`}
+            />
+          </div>
+          <select
+            value={filtroMapaSucursal}
+            onChange={(e) => setFiltroMapaSucursal(e.target.value)}
+            className={`px-3 py-2 rounded-xl text-sm font-medium border focus:outline-none focus:ring-2 transition ${
+              darkMode
+                ? 'bg-slate-950/60 border-slate-800 text-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20'
+                : 'bg-gray-50 border-gray-300 text-gray-700 focus:border-emerald-500 focus:ring-emerald-500/20'
+            }`}
+          >
+            <option value="todas">Todas las sucursales</option>
+            {sucursalesMapa.map((sucursal) => (
+              <option key={sucursal} value={sucursal}>{sucursal}</option>
+            ))}
+          </select>
+          <select
+            value={filtroMapaUsuario}
+            onChange={(e) => setFiltroMapaUsuario(e.target.value)}
+            className={`px-3 py-2 rounded-xl text-sm font-medium border focus:outline-none focus:ring-2 transition ${
+              darkMode
+                ? 'bg-slate-950/60 border-slate-800 text-slate-200 focus:border-emerald-500 focus:ring-emerald-500/20'
+                : 'bg-gray-50 border-gray-300 text-gray-700 focus:border-emerald-500 focus:ring-emerald-500/20'
+            }`}
+          >
+            <option value="todos">Todos los usuarios</option>
+            {usuariosMapa.map((nombre) => (
+              <option key={nombre} value={nombre}>{nombre}</option>
+            ))}
+          </select>
+          {filtrosMapaActivos && (
+            <button
+              type="button"
+              onClick={limpiarFiltrosMapa}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wide border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition"
+            >
+              <X size={14} /> Limpiar
+            </button>
+          )}
+        </div>
+
         {errorPuntos && (
           <div role="alert" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
             No se pudieron cargar las ubicaciones: {errorPuntos}
@@ -526,7 +623,7 @@ export default function DashboardAdmin() {
         )}
 
         <MapaGeneral
-          puntos={puntos}
+          puntos={puntosMapaFiltrados}
           cargando={cargandoPuntos}
           error={errorPuntos}
           theme={{

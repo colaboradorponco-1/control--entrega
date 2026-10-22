@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from '../modules/auth/Login';
 import ProtectedRoute from '../components/ProtectedRoute';
 import RecepcionPollo from '../modules/planta/RecepcionPollo';
-import MisEntregas from '../modules/sucursal/MisEntregas';
 import DashboardAdmin from '../modules/admin/DashboardAdmin';
 import GestionUsuarios from '../modules/admin/GestionUsuarios';
 import GestionSucursales from '../modules/admin/GestionSucursales';
@@ -12,6 +11,7 @@ import PedidosDespachador from '../modules/despacho/PedidosDespachador';
 import MisSucursalesDueno from '../modules/dueno/MisSucursalesDueno';
 import GestionDuenos from '../modules/admin/GestionDuenos';
 import GestionRutas from '../modules/admin/GestionRutas';
+import BandejaAvisos from '../modules/admin/BandejaAvisos';
 import RecuperarContrasena from '../modules/auth/RecuperarContrasena';
 import NuevaContrasena from '../modules/auth/NuevaContrasena';
 import PanelPrincipal from '../modules/panel/PanelPrincipal';
@@ -66,7 +66,7 @@ export default function AppRouter() {
           path="/sucursal"
           element={
             <ProtectedRoute rolesPermitidos={['sucursal', 'administrador']}>
-              <MisEntregas />
+              <PedidosSucursal />
             </ProtectedRoute>
           }
         />
@@ -85,6 +85,15 @@ export default function AppRouter() {
           element={
             <ProtectedRoute rolesPermitidos={['administrador']}>
               <GestionUsuarios />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/avisos"
+          element={
+            <ProtectedRoute rolesPermitidos={['administrador']} excluirSuperadmin>
+              <BandejaAvisos />
             </ProtectedRoute>
           }
         />
@@ -125,14 +134,7 @@ export default function AppRouter() {
           }
         />
 
-        <Route
-          path="/sucursal/pedidos"
-          element={
-            <ProtectedRoute rolesPermitidos={['sucursal', 'administrador']}>
-              <PedidosSucursal />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/sucursal/pedidos" element={<Navigate to="/sucursal" replace />} />
 
         <Route
           path="/planta/pedidos"

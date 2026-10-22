@@ -1,7 +1,13 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-export default function ProtectedRoute({ children, rolesPermitidos }) {
+/**
+ * En las rutas que el superadmin puede abrir (por ejemplo el
+ * panel), queda como administrador y asi puede ver lo mismo.
+ * Con excluirSuperadmin la ruta es solo del administrador: el
+ * superadmin vuelve al panel principal.
+ */
+export default function ProtectedRoute({ children, rolesPermitidos, excluirSuperadmin }) {
   const { usuario, perfil, cargando } = useAuth();
 
   if (cargando) {
@@ -18,6 +24,7 @@ export default function ProtectedRoute({ children, rolesPermitidos }) {
 
   const rolActual = perfil.roles?.nombre;
   const esAdminPermitido = rolActual === 'superadmin'
+    && !excluirSuperadmin
     && rolesPermitidos?.includes('administrador');
 
   if (rolesPermitidos && !rolesPermitidos.includes(rolActual) && !esAdminPermitido) {

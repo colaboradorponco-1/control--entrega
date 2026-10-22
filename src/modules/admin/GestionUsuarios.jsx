@@ -12,7 +12,6 @@ import {
 } from 'lucide-react';
 
 const ROL_COLOR = {
-  superadmin: 'bg-fuchsia-500/10 text-fuchsia-500 border-fuchsia-500/20',
   administrador: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
   operador_planta: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
   despachador: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
@@ -21,7 +20,6 @@ const ROL_COLOR = {
 };
 
 const ROL_LABEL = {
-  superadmin: 'Superadmin',
   administrador: 'Administrador',
   operador_planta: 'Operador Planta',
   despachador: 'Despachador',
@@ -54,14 +52,14 @@ const obtenerDatosUsuarios = async () => {
   }));
 
   const duenos = await duenosRepository.disponible()
-    ? await duenosRepository.listarConSucursales(sucursales)
+    ? await duenosRepository.listar()
     : [];
 
   return { usuarios, roles, sucursales, duenos };
 };
 
 export default function GestionUsuarios() {
-  const { usuario, perfil } = useAuth();
+  const { usuario } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -77,7 +75,6 @@ export default function GestionUsuarios() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editandoId, setEditandoId] = useState(null);
   const [nuevaPassword, setNuevaPassword] = useState('');
-  const esSuperadmin = perfil?.roles?.nombre === 'superadmin';
   const [enviando, setEnviando] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
@@ -132,12 +129,6 @@ export default function GestionUsuarios() {
   const rolActual = roles.find((r) => String(r.id) === String(form.rol_id))?.nombre || '';
   const esRolSucursal = rolActual === 'sucursal';
   const esRolDueno = rolActual === 'dueno';
-  const duenoSeleccionado = duenos.find(
-    (dueno) => String(dueno.id) === String(form.dueno_id)
-  );
-  const superadminExistente = usuarios.find(
-    (u) => u.roles?.nombre === 'superadmin' && u.id !== editandoId
-  );
   const rutasDisponibles = [...new Set(sucursales.map((s) => s.sector).filter(Boolean))].sort();
   const sucursalesDeRuta = form.ruta
     ? sucursales.filter((s) => s.sector === form.ruta)
@@ -154,12 +145,6 @@ export default function GestionUsuarios() {
       u.sucursales?.sector?.toLowerCase().includes(q)
     );
   });
-
-  const puedeGestionarUsuario = (u) => (
-    esSuperadmin
-    || !['administrador', 'superadmin'].includes(u.roles?.nombre)
-    || u.usuario_id === usuario?.id
-  );
 
   const abrirCrear = () => {
     setForm(EMPTY_FORM);
@@ -204,24 +189,6 @@ export default function GestionUsuarios() {
       setMensaje({ tipo: 'error', texto: 'Selecciona la ruta a la que pertenece el usuario' });
       return;
     }
-    if (rolActual === 'superadmin' && superadminExistente) {
-      setMensaje({
-        tipo: 'error',
-        texto: `Solo puede haber un Superadmin. Actualmente está asignado a "${superadminExistente.nombre_completo}".`,
-      });
-      return;
-    }
-    if (
-      !esSuperadmin
-      && ['administrador', 'superadmin'].includes(rolActual)
-      && usuarios.find((u) => u.id === editandoId)?.roles?.nombre !== rolActual
-    ) {
-      setMensaje({
-        tipo: 'error',
-        texto: 'Solo el Superadmin puede asignar o cambiar roles de administrador.',
-      });
-      return;
-    }
 
     setEnviando(true);
 
@@ -232,8 +199,6 @@ export default function GestionUsuarios() {
         : null;
 
       if (modal === 'crear') {
-        // La Edge Function guarda el dueno_id en el mismo upsert del
-        // perfil, asi que no hace falta un segundo update desde aca.
         await usuariosRepository.crearUsuario({
           email: form.email,
           password: form.password,
@@ -388,8 +353,7 @@ export default function GestionUsuarios() {
       <div className={`flex flex-col md:flex-row justify-between items-start md:items-center p-4 md:p-6 rounded-2xl shadow mb-6 border gap-4 transition-colors duration-300 ${card}`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-wider mb-1">
-            {esSuperadmin ? <Crown size={16} className="shrink-0" /> : <Users size={16} className="shrink-0" />}
-            {esSuperadmin ? 'Control exclusivo de Superadmin' : 'Administración de Usuarios'}
+            <Users size={16} className="shrink-0" /> Administración de Usuarios
           </div>
           <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight break-words">Gestión de Usuarios</h1>
           <p className={`text-xs sm:text-sm mt-1 ${muted}`}>
@@ -405,7 +369,7 @@ export default function GestionUsuarios() {
             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
           <button
-            onClick={() => navigate('/panel')}
+            onClick={() => navigate('/admin')}
             className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold border transition ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
           >
             <ArrowLeft size={16} /> <span className="hidden sm:inline">Volver al Panel</span>
@@ -520,7 +484,6 @@ export default function GestionUsuarios() {
                         </td>
                         <td className="p-3.5">
                           <div className="flex items-center justify-end gap-1.5">
-                            {puedeGestionarUsuario(u) ? <>
                             <button
                               onClick={() => abrirEditar(u)}
                               title="Editar"
@@ -567,9 +530,6 @@ export default function GestionUsuarios() {
                             >
                               <Trash2 size={15} />
                             </button>
-                            </> : (
-                              <span className={`text-xs ${muted}`}>Solo Superadmin</span>
-                            )}
                           </div>
                         </td>
                       </tr>
@@ -614,7 +574,6 @@ export default function GestionUsuarios() {
                       </div>
                     )}
 
-                    {puedeGestionarUsuario(u) ? (
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         onClick={() => abrirEditar(u)}
@@ -648,9 +607,6 @@ export default function GestionUsuarios() {
                         <Trash2 size={14} /> Borrar
                       </button>
                     </div>
-                    ) : (
-                      <p className={`text-xs ${muted}`}>La gestión de administradores está reservada al Superadmin.</p>
-                    )}
                   </div>
                 );
               })}
@@ -760,36 +716,10 @@ export default function GestionUsuarios() {
                     className={`w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:ring-2 transition ${input}`}
                   >
                     <option value="">Seleccione un rol...</option>
-                    {roles
-                      .filter((r) => (
-                        esSuperadmin
-                        || !['administrador', 'superadmin'].includes(r.nombre)
-                        || String(r.id) === String(form.rol_id)
-                      ))
-                      .map((r) => (
-                      <option
-                        key={r.id}
-                        value={r.id}
-                        disabled={
-                          (!esSuperadmin && ['administrador', 'superadmin'].includes(r.nombre))
-                          || (r.nombre === 'superadmin' && Boolean(superadminExistente))
-                        }
-                      >
-                        {ROL_LABEL[r.nombre] || r.nombre}
-                        {r.nombre === 'superadmin' && superadminExistente ? ' (ya asignado)' : ''}
-                      </option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>{ROL_LABEL[r.nombre] || r.nombre}</option>
                     ))}
                   </select>
-                  {superadminExistente && (
-                    <p className={`mt-2 text-xs ${muted}`}>
-                      Superadmin ya asignado a {superadminExistente.nombre_completo}. Cambia primero ese rol para transferirlo.
-                    </p>
-                  )}
-                  {!esSuperadmin && (
-                    <p className={`mt-2 text-xs ${muted}`}>
-                      Solo el Superadmin puede crear, editar o asignar cuentas de administrador.
-                    </p>
-                  )}
                 </div>
 
                 {esRolDueno && (
@@ -808,9 +738,7 @@ export default function GestionUsuarios() {
                         {duenos.map((d) => (
                           <option key={d.id} value={d.id}>
                             {d.nombre}
-                            {d.sucursales?.length
-                              ? ` · ${d.sucursales.length} sucursal${d.sucursales.length === 1 ? '' : 'es'}`
-                              : ' · sin sucursales asignadas'}
+                            {d.sucursales?.length ? '' : ' (sin sucursales)'}
                           </option>
                         ))}
                       </select>
@@ -820,38 +748,6 @@ export default function GestionUsuarios() {
                         <strong> Dueños</strong> del panel de administración, o corré
                         <code className="mx-1">supabase/DUENOS-PARTE1.sql</code> a{' '}
                         <code className="mx-1">PARTE3</code> en Supabase.
-                      </div>
-                    )}
-                    {duenoSeleccionado && (
-                      <div className={`mt-3 rounded-xl border p-3 ${
-                        darkMode
-                          ? 'border-rose-900/50 bg-rose-950/20'
-                          : 'border-rose-200 bg-rose-50'
-                      }`}>
-                        <p className={`text-xs font-bold ${strong}`}>
-                          Sucursales de {duenoSeleccionado.nombre}
-                        </p>
-                        {duenoSeleccionado.sucursales?.length ? (
-                          <ul className="mt-2 flex flex-wrap gap-2">
-                            {duenoSeleccionado.sucursales.map((sucursal) => (
-                              <li
-                                key={sucursal.id}
-                                className={`rounded-lg border px-2.5 py-1.5 text-xs ${
-                                  darkMode
-                                    ? 'border-slate-700 bg-slate-900 text-slate-200'
-                                    : 'border-gray-200 bg-white text-gray-700'
-                                }`}
-                              >
-                                <span className="font-semibold">{sucursal.nombre}</span>
-                                {sucursal.sector && <span className={`ml-1 ${muted}`}>· {sucursal.sector}</span>}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className={`mt-1 text-xs ${muted}`}>
-                            Este dueño todavía no tiene sucursales asignadas. Asígnalas primero en Dueños.
-                          </p>
-                        )}
                       </div>
                     )}
                     <p className={`text-xs mt-2 ${muted}`}>
