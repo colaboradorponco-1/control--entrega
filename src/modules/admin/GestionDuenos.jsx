@@ -4,6 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { authRepository } from '../../repositories/AuthRepository';
 import { duenosRepository } from '../../repositories/duenosRepository';
 import { sucursalesRepository } from '../../repositories/sucursalesRepository';
+import ModalConfirmar from '../../components/ModalConfirmar';
 import {
   LogOut, Sun, Moon, Plus, Pencil, Trash2, X, ArrowLeft,
   CheckCircle, AlertCircle, Users, MapPin, Loader2, Crown,
@@ -26,6 +27,8 @@ export default function GestionDuenos() {
   const [editandoId, setEditandoId] = useState(null);
   const [seleccionadas, setSeleccionadas] = useState([]);
   const [enviando, setEnviando] = useState(false);
+  const [confirmar, setConfirmar] = useState(null);
+  const [procesandoConfirm, setProcesandoConfirm] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -70,6 +73,13 @@ export default function GestionDuenos() {
   useEffect(() => {
     cargarDatos();
   }, [cargarDatos]);
+
+  // Auto-cierre del mensaje de éxito a los 5 segundos.
+  useEffect(() => {
+    if (mensaje?.tipo !== 'ok') return;
+    const t = setTimeout(() => setMensaje(null), 5000);
+    return () => clearTimeout(t);
+  }, [mensaje]);
 
   // Que sucursales todavia no son de nadie
   const libres = useMemo(() => {
@@ -163,34 +173,52 @@ export default function GestionDuenos() {
   };
 
   const eliminarDueño = async (d) => {
-    const ok = window.confirm(
-      `¿Eliminar a "${d.nombre}"?\n\nSi tiene sucursales asignadas o usuarios con su cuenta, no se va a poder borrar.`
-    );
-    if (!ok) return;
+    const usos = await duenosRepository.contarUsos(d.id);
+    const tieneUsos = usos.sucursales > 0 || usos.usuarios > 0;
 
-    try {
-      const usos = await duenosRepository.contarUsos(d.id);
-      if (usos.sucursales > 0 || usos.usuarios > 0) {
-        const detalle = [];
-        if (usos.sucursales) detalle.push(`${usos.sucursales} sucursal(es)`);
-        if (usos.usuarios) detalle.push(`${usos.usuarios} usuario(s)`);
-
-        const desactivar = window.confirm(
-          `No se puede borrar porque tiene ${detalle.join(' y ')}.\n\n` +
-            `¿Marcarlo como inactivo en su lugar? Así deja de ser dueño de esas sucursales, ` +
-            `pero no se pierde el historial.`
-        );
-        if (!desactivar) return;
-
-        await duenosRepository.desactivar(d.id, false);
-        setMensaje({ tipo: 'ok', texto: `${d.nombre} quedó inactivo` });
-      } else {
-        await duenosRepository.eliminar(d.id);
-        setMensaje({ tipo: 'ok', texto: 'Dueño eliminado' });
-      }
-      await cargarDatos();
-    } catch (err) {
-      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar' });
+    if (tieneUsos) {
+      const detalle = [];
+      if (usos.sucursales) detalle.push(`${usos.sucursales} sucursal(es)`);
+      if (usos.usuarios) detalle.push(`${usos.usuarios} usuario(s)`);
+      setConfirmar({
+        titulo: `No se puede eliminar a "${d.nombre}"`,
+        mensaje: `Tiene ${detalle.join(' y ')}. ¿Marcarlo como inactivo en su lugar? Así deja de ser dueño de esas sucursales, pero no se pierde el historial.`,
+        labelConfirmar: 'Marcar inactivo',
+        variante: 'warning',
+        onConfirmar: async () => {
+          try {
+            setProcesandoConfirm(true);
+            await duenosRepository.desactivar(d.id, false);
+            setMensaje({ tipo: 'ok', texto: `${d.nombre} quedó inactivo` });
+            await cargarDatos();
+          } catch (err) {
+            setMensaje({ tipo: 'error', texto: err.message || 'No se pudo desactivar' });
+          } finally {
+            setProcesandoConfirm(false);
+            setConfirmar(null);
+          }
+        },
+      });
+    } else {
+      setConfirmar({
+        titulo: `Eliminar a "${d.nombre}"`,
+        mensaje: 'Esta acción no se puede deshacer.',
+        labelConfirmar: 'Eliminar',
+        variante: 'danger',
+        onConfirmar: async () => {
+          try {
+            setProcesandoConfirm(true);
+            await duenosRepository.eliminar(d.id);
+            setMensaje({ tipo: 'ok', texto: 'Dueño eliminado' });
+            await cargarDatos();
+          } catch (err) {
+            setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar' });
+          } finally {
+            setProcesandoConfirm(false);
+            setConfirmar(null);
+          }
+        },
+      });
     }
   };
 
@@ -504,6 +532,12 @@ export default function GestionDuenos() {
           </div>
         </div>
       )}
+
+      <ModalConfirmar
+        config={confirmar}
+        onCerrar={() => { if (!procesandoConfirm) setConfirmar(null); }}
+        cargando={procesandoConfirm}
+      />
     </div>
   );
 }

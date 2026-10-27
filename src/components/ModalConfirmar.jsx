@@ -1,0 +1,106 @@
+import { useEffect } from 'react';
+import { AlertTriangle, X, Loader2 } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+
+/**
+ * Modal de confirmación reutilizable.
+ * Reemplaza window.confirm con una UI consistente con el sistema.
+ *
+ * Uso:
+ *   const [confirmar, setConfirmar] = useState(null);
+ *   // Para abrir:
+ *   setConfirmar({ mensaje: '¿Cancelar pedido #5?', onConfirmar: () => cancelar(5) });
+ *   // En el JSX:
+ *   <ModalConfirmar config={confirmar} onCerrar={() => setConfirmar(null)} />
+ */
+export default function ModalConfirmar({
+  config,
+  onCerrar,
+  cargando = false,
+}) {
+  const { darkMode } = useTheme();
+
+  // Cerrar con Escape
+  useEffect(() => {
+    if (!config) return undefined;
+    const manejar = (e) => { if (e.key === 'Escape' && !cargando) onCerrar(); };
+    document.addEventListener('keydown', manejar);
+    return () => document.removeEventListener('keydown', manejar);
+  }, [config, onCerrar, cargando]);
+
+  if (!config) return null;
+
+  const {
+    titulo = '¿Confirmar acción?',
+    mensaje,
+    labelConfirmar = 'Confirmar',
+    variante = 'danger',   // 'danger' | 'warning' | 'default'
+    onConfirmar,
+  } = config;
+
+  const colores = {
+    danger: 'bg-red-600 hover:bg-red-700',
+    warning: 'bg-amber-500 hover:bg-amber-600',
+    default: 'bg-purple-600 hover:bg-purple-700',
+  };
+
+  const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
+  const strong = darkMode ? 'text-white' : 'text-gray-900';
+  const muted = darkMode ? 'text-slate-400' : 'text-gray-500';
+  const cancelBtn = darkMode
+    ? 'border-slate-700 text-slate-300 hover:bg-slate-800'
+    : 'border-gray-300 text-gray-700 hover:bg-gray-50';
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
+      onClick={(e) => { if (e.target === e.currentTarget && !cargando) onCerrar(); }}
+      role="presentation"
+    >
+      <div className={`${card} w-full max-w-sm rounded-2xl border p-5 shadow-2xl`}>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="rounded-xl bg-amber-500/10 p-2 text-amber-500">
+              <AlertTriangle size={18} />
+            </span>
+            <h2 className={`text-base font-black ${strong}`}>{titulo}</h2>
+          </div>
+          {!cargando && (
+            <button
+              type="button"
+              onClick={onCerrar}
+              className={`rounded-lg p-1.5 transition ${muted} hover:bg-slate-500/10`}
+              aria-label="Cerrar"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        {mensaje && (
+          <p className={`mb-5 text-sm leading-relaxed ${muted}`}>{mensaje}</p>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCerrar}
+            disabled={cargando}
+            className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 ${cancelBtn}`}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirmar}
+            disabled={cargando}
+            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition disabled:opacity-60 ${colores[variante]}`}
+          >
+            {cargando && <Loader2 size={15} className="animate-spin" />}
+            {labelConfirmar}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

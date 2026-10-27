@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { authRepository } from '../../repositories/AuthRepository';
@@ -48,7 +48,17 @@ export default function Login() {
   const [intentos, setIntentos] = useState(() => leer(CLAVE_INTENTOS) || 0);
   const [restante, setRestante] = useState(() => Math.max(0, (leer(CLAVE_BLOQUEO) || 0) - Date.now()));
   const navigate = useNavigate();
+  const location = useLocation();
   const refEmail = useRef(null);
+
+  // Aviso de sesión expirada proveniente de ProtectedRoute
+  useEffect(() => {
+    if (location.state?.aviso) {
+      setAviso(location.state.aviso);
+      // Limpiar el state para que no reaparezca al refrescar
+      window.history.replaceState({}, '');
+    }
+  }, [location.state?.aviso]);
 
   // Cuenta regresiva del bloqueo
   useEffect(() => {

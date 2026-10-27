@@ -104,6 +104,13 @@ export default function GestionUsuarios() {
     }
   }, []);
 
+  // Auto-cierre del mensaje de éxito a los 5 segundos.
+  useEffect(() => {
+    if (mensaje?.tipo !== 'ok') return;
+    const t = setTimeout(() => setMensaje(null), 5000);
+    return () => clearTimeout(t);
+  }, [mensaje]);
+
   useEffect(() => {
     let vigente = true;
     obtenerDatosUsuarios()

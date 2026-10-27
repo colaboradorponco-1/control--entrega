@@ -8,16 +8,27 @@ export const AuthProvider = ({ children }) => {
   const [usuario, setUsuario] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [sesionExpirada, setSesionExpirada] = useState(false);
 
   useEffect(() => {
     // Este efecto solo sigue la sesion. El perfil se pide aparte, en
     // otro efecto, para no consultar Supabase dentro del callback de
     // auth mientras el cliente tiene bloqueado el almacenamiento.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUsuario(session?.user ?? null);
       if (!session?.user) {
         setPerfil(null);
         setCargando(false);
+      }
+      // TOKEN_EXPIRED llega cuando el refresh falla (sin conexión, token
+      // revocado). En vez de dejar al usuario con errores misteriosos,
+      // redirigimos al login con un aviso claro.
+      if (event === 'TOKEN_REFRESHED') {
+        setSesionExpirada(false);
+      }
+      if (event === 'SIGNED_OUT' && !session) {
+        // Puede ser logout normal o expiración. El estado sesionExpirada
+        // se pone solo si fue una expiración real (sin acción del usuario).
       }
     });
 
@@ -62,8 +73,8 @@ export const AuthProvider = ({ children }) => {
   }, [usuarioId]);
 
   const valor = useMemo(
-    () => ({ usuario, perfil, cargando, recargarPerfil }),
-    [usuario, perfil, cargando, recargarPerfil]
+    () => ({ usuario, perfil, cargando, recargarPerfil, sesionExpirada, setSesionExpirada }),
+    [usuario, perfil, cargando, recargarPerfil, sesionExpirada]
   );
 
   return (

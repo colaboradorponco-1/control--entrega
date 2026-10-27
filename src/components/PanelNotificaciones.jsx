@@ -18,13 +18,20 @@ const fechaCorta = (valor) => {
 };
 
 /**
- * Campana de avisos del administrador.
+ * Campana de avisos.
  *
- * Solo la monta el rol 'administrador': el superadmin no recibe
- * los reportes de entrega de las sucursales. La lista completa
- * esta en la bandeja (/avisos), aqui solo va el resumen rapido.
+ * Se usa en el panel del administrador y en el panel de sucursal.
+ * La lista completa vive en una bandeja aparte; aqui solo va el
+ * resumen rapido.
  */
-export default function PanelNotificaciones() {
+export default function PanelNotificaciones({
+  titulo = 'Avisos de las sucursales',
+  textoVacio = 'Todavia no hay avisos de las sucursales.',
+  rutaBandeja = '/avisos',
+  rutaPedido = '/sucursal',
+  mostrarSucursal = true,
+  alAbrirAviso,
+}) {
   const { darkMode } = useTheme();
   const navigate = useNavigate();
   const { avisos, urls, cargando, error, marcarLeida, marcarTodas } = useAvisos();
@@ -49,8 +56,15 @@ export default function PanelNotificaciones() {
   const abrirAviso = async (aviso) => {
     if (!aviso.leido) await marcarLeida(aviso);
     setAbierto(false);
-    navigate('/sucursal');
+    if (alAbrirAviso) alAbrirAviso(aviso);
+    else navigate(rutaPedido);
   };
+
+  const metaAviso = (aviso) => [
+    mostrarSucursal ? (aviso.sucursal_nombre || 'Sucursal') : null,
+    aviso.origen_nombre,
+    aviso.creado_en ? fechaCorta(aviso.creado_en) : null,
+  ].filter(Boolean).join(' - ');
 
   const campana = darkMode
     ? 'bg-slate-800 border-slate-700 text-amber-400 hover:bg-slate-700'
@@ -66,7 +80,7 @@ export default function PanelNotificaciones() {
       <button
         onClick={() => setAbierto((valor) => !valor)}
         className={`relative p-2.5 rounded-xl border transition flex items-center justify-center ${campana}`}
-        title="Avisos de las sucursales"
+        title={titulo}
       >
         <Bell size={18} />
         {sinLeer > 0 && (
@@ -82,7 +96,7 @@ export default function PanelNotificaciones() {
         >
           <div className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${borde}`}>
             <div>
-              <p className="text-sm font-extrabold">Avisos de las sucursales</p>
+              <p className="text-sm font-extrabold">{titulo}</p>
               <p className={`text-[11px] ${suave}`}>
                 {sinLeer > 0 ? `${sinLeer} sin leer` : 'Todo al dia'}
               </p>
@@ -124,7 +138,7 @@ export default function PanelNotificaciones() {
               <div className="px-4 py-8 text-center">
                 <Package size={22} className={`mx-auto mb-2 ${suave}`} />
                 <p className={`text-sm ${suave}`}>
-                  Todavia no hay avisos de las sucursales.
+                  {textoVacio}
                 </p>
               </div>
             )}
@@ -142,9 +156,7 @@ export default function PanelNotificaciones() {
                   {!aviso.leido && <span className="mt-1 h-2 w-2 rounded-full bg-red-500 shrink-0" />}
                 </div>
                 <p className={`text-[11px] mt-0.5 ${suave}`}>
-                  {aviso.sucursal_nombre || 'Sucursal'}
-                  {aviso.origen_nombre ? ` - ${aviso.origen_nombre}` : ''}
-                  {aviso.creado_en ? ` - ${fechaCorta(aviso.creado_en)}` : ''}
+                  {metaAviso(aviso)}
                 </p>
                 {aviso.mensaje && (
                   <p className={`text-[12px] mt-1 ${suave}`}>{aviso.mensaje}</p>
@@ -185,7 +197,7 @@ export default function PanelNotificaciones() {
             <button
               onClick={() => {
                 setAbierto(false);
-                navigate('/avisos');
+                navigate(rutaBandeja);
               }}
               className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-500/15 px-3 py-2 text-[11px] font-bold text-amber-600 transition hover:bg-amber-500/25"
             >

@@ -5,13 +5,10 @@ import { useTheme } from '../../context/ThemeContext';
 import { recepcionRepository } from '../../repositories/recepcionRepository';
 import { evidenciasRepository } from '../../repositories/evidenciasRepository';
 import { authRepository } from '../../repositories/AuthRepository';
-import { adminRepository } from '../../repositories/AdminRepository';
 import FirmaCanvas from '../../components/FirmaCanvas';
 import SelectorFoto from '../../components/SelectorFoto';
 import FotosObservaciones from '../../components/FotosObservaciones';
-import MapaUbicacion from '../../components/MapaUbicacion';
-import MapaGeneral from '../../components/MapaGeneral';
-import { ArrowLeft, LogOut, PackagePlus, Scale, Hash, DollarSign, FileText, CheckCircle, AlertCircle, Sun, Moon, ShoppingCart, User, Eye, MapPinned } from 'lucide-react';
+import { ArrowLeft, LogOut, PackagePlus, Scale, Hash, DollarSign, FileText, CheckCircle, AlertCircle, Sun, Moon, ShoppingCart, User, Eye } from 'lucide-react';
 
 export default function RecepcionPollo() {
   const navigate = useNavigate();
@@ -21,20 +18,28 @@ export default function RecepcionPollo() {
   const [historial, setHistorial] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
-  const [puntos, setPuntos] = useState([]);
-  const [cargandoPuntos, setCargandoPuntos] = useState(true);
-  const [errorPuntos, setErrorPuntos] = useState('');
+
+  // NUEVO: Estados para la nueva función de recepción
+  const [pedidosDisponibles, setPedidosDisponibles] = useState([]);
+  const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
+  const [unidades, setUnidades] = useState('');
+  const [kilos, setKilos] = useState(''); // AGREGADO: Estado original de kilos
+  const [kilosCalculados, setKilosCalculados] = useState(0);
+  const [faltantes, setFaltantes] = useState(false);
 
   const [proveedorId, setProveedorId] = useState('');
   const [numeroRecibo, setNumeroRecibo] = useState('');
-  const [kilos, setKilos] = useState('');
-  const [unidades, setUnidades] = useState('');
   const [precioPorKilo, setPrecioPorKilo] = useState('');
   const [entregadoPor, setEntregadoPor] = useState('');
   const [recibidoPor, setRecibidoPor] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
-  // Evidencia: una foto y dos firmas, la de quien trae y la de quien recibe
+// Sincronizar kilosCalculados con kilos cada vez que kilos cambia
+useEffect(() => {
+  setKilosCalculados(parseFloat(kilos) || 0);
+}, [kilos]);
+
+// Evidencia: una foto y dos firmas, la de quien trae y la de quien recibe
   const [foto, setFoto] = useState(null);
   const [firmaEntrega, setFirmaEntrega] = useState(null);
   const [firmaRecepcion, setFirmaRecepcion] = useState(null);
@@ -58,29 +63,19 @@ export default function RecepcionPollo() {
     cargarDatos();
   }, [cargarDatos]);
 
-  const cargarPuntosMapa = useCallback(async () => {
-    try {
-      setCargandoPuntos(true);
-      setErrorPuntos('');
-      setPuntos(await adminRepository.obtenerPuntosMapa());
-    } catch (err) {
-      console.error('No se pudieron cargar los puntos del mapa:', err);
-      setErrorPuntos(err.message || 'No se pudieron cargar las ubicaciones registradas.');
-    } finally {
-      setCargandoPuntos(false);
-    }
-  }, []);
-
+  // Auto-cierre del mensaje de éxito a los 5 segundos.
   useEffect(() => {
-    cargarPuntosMapa();
-  }, [cargarPuntosMapa]);
+    if (mensaje?.tipo !== 'ok') return;
+    const t = setTimeout(() => setMensaje(null), 5000);
+    return () => clearTimeout(t);
+  }, [mensaje]);
 
   const total = useMemo(() => {
-    const k = parseFloat(kilos);
+    const k = parseFloat(kilosCalculados);
     const p = parseFloat(precioPorKilo);
     if (Number.isNaN(k) || Number.isNaN(p)) return null;
     return (k * p).toFixed(2);
-  }, [kilos, precioPorKilo]);
+  }, [kilosCalculados, precioPorKilo]);
 
   const limpiarFormulario = () => {
     setNumeroRecibo('');
@@ -124,32 +119,53 @@ export default function RecepcionPollo() {
       return;
     }
 
-    setCargando(true);
+    setMensaje(null);
 
     try {
-      await recepcionRepository.registrarLote({
-        proveedor_id: proveedorId,
-        numero_recibo: numeroRecibo,
-        kilos,
-        unidades,
-        precio_por_kilo: precioPorKilo,
-        observaciones,
-        entregado_por: entregadoPor,
-        recibido_por: recibidoPor,
-        fotosExtra,
-        foto,
-        firmaEntrega: evidenciasRepository.dataUrlABlob(firmaEntrega),
-        firmaRecepcion: evidenciasRepository.dataUrlABlob(firmaRecepcion),
-        ubicacion,
-      });
+      // Llamar a la función registrar_recepcion_completa en Supabase
+      const { data, error } = await supabase
+        .rpc('public.registrar_recepcion_completa', {
+          p_pedido_id: pedidoSeleccionado?.id,
+          p_unidades_recibidas: parseInt(unidades) || 0,
+          p_observaciones: observaciones || null
+        });
 
-      setMensaje({ tipo: 'exito', texto: 'Lote registrado con foto y las dos firmas' });
-      limpiarFormulario();
-      cargarDatos();
+      if (error) {
+        console.error('Error en la función RPC:', error);
+        setMensaje({ tipo: 'error', texto: 'Error al registrar recepción: ' + error.message });
+        return;
+      }
+
+      // data viene con: exito, mensaje, recepcion_id, saldo_actual, faltantes
+      if (data && data.exito) {
+        // Mostrar mensaje de éxito con información del saldo
+        setMensaje({
+          tipo: 'ok',
+          texto: data.mensaje + '. Saldo actual: ' + (data.saldo_actual ? data.saldo_actual.toFixed(2) : '0') + ' kg. Faltantes: ' + (data.faltantes ? 'Sí' : 'No')
+        });
+
+        // Actualizar el kilos calculados basados en el nuevo saldo
+        setKilosCalculados(data.saldo_actual || 0);
+
+        // Resetear formulario después de un momento
+        setTimeout(() => {
+          limpiarFormulario();
+        }, 3000);
+
+        // Actualizar historial
+        try {
+          const listHistorial = await recepcionRepository.obtenerRecepcionesDelDia();
+          setHistorial(listHistorial);
+        } catch (err) {
+          // Ignorar errores al actualizar historial
+        }
+      } else {
+        // Error al registrar
+        setMensaje({ tipo: 'error', texto: data?.mensaje || 'Error desconocido al registrar recepción' });
+      }
     } catch (err) {
-      setMensaje({ tipo: 'error', texto: err.message || 'Error al guardar el registro' });
-    } finally {
-      setCargando(false);
+      console.error('Excepción al registrar recepción:', err);
+      setMensaje({ tipo: 'error', texto: 'Error inesperado al procesar la recepción' });
     }
   };
 
@@ -396,11 +412,7 @@ export default function RecepcionPollo() {
               theme={{ borde: input, texto: label, tenue: muted, hoja: card }}
             />
 
-            <MapaUbicacion
-              valor={ubicacion}
-              onCambio={setUbicacion}
-              theme={{ borde: input, texto: label, tenue: muted, hoja: card, pin: '#f59e0b', oscuro: darkMode }}
-            />
+            
 
             <button
               type="submit"
@@ -491,44 +503,6 @@ export default function RecepcionPollo() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Mapa general: donde se marco cada movimiento (recepciones, despachos y entregas) */}
-      <div className={`mt-6 md:mt-8 rounded-2xl shadow border p-5 md:p-6 transition-colors duration-300 ${card}`}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 pb-4 border-b gap-3">
-          <h2 className={`text-lg font-bold flex items-center gap-2 ${strong}`}>
-            <MapPinned className="text-emerald-500" size={20} /> Movimientos en el mapa
-          </h2>
-          <p className={`text-xs ${muted}`}>
-            Toca la leyenda para mostrar u ocultar cada tipo de punto.
-          </p>
-        </div>
-
-        {errorPuntos && (
-          <div role="alert" className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
-            No se pudieron cargar las ubicaciones: {errorPuntos}
-            <button
-              type="button"
-              onClick={cargarPuntosMapa}
-              disabled={cargandoPuntos}
-              className="ml-3 font-bold underline disabled:opacity-60"
-            >
-              Reintentar
-            </button>
-          </div>
-        )}
-
-        <MapaGeneral
-          puntos={puntos}
-          cargando={cargandoPuntos}
-          error={errorPuntos}
-          theme={{
-            borde: darkMode ? 'border-slate-800' : 'border-gray-200',
-            texto: darkMode ? 'text-slate-300' : 'text-gray-700',
-            tenue: darkMode ? 'text-slate-500' : 'text-gray-400',
-            hoja: darkMode ? 'bg-slate-900' : 'bg-white',
-          }}
-        />
       </div>
 
       {/* Visor de evidencia del lote */}

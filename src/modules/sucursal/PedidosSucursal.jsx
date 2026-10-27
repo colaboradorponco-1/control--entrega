@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { pedidosRepository } from '../../repositories/pedidosRepository';
@@ -9,12 +9,15 @@ import { supabase } from '../../config/supabaseClient';
 import {
   LogOut, Sun, Moon, X, ArrowLeft, CheckCircle, AlertCircle,
   ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban,
-  Camera, FileCheck2, Images, RefreshCw, Bell, Store, Inbox,
-  History, XCircle
+  Camera, FileCheck2, Images, RefreshCw, Inbox,
+  History, XCircle, ChevronDown, Archive, ArchiveRestore, Trash2,
+  Search, Download
 } from 'lucide-react';
 import FotosObservaciones from '../../components/FotosObservaciones';
 import FormularioRecepcion from '../../components/FormularioRecepcion';
-import EntregasDirectas from './EntregasDirectas';
+import PanelNotificaciones from '../../components/PanelNotificaciones';
+import ModalConfirmar from '../../components/ModalConfirmar';
+import Skeleton from '../../components/Skeleton';
 
 const ESTADOS = {
   PENDIENTE: { label: 'Pendiente', badge: 'bg-amber-500/10 text-amber-500 border-amber-500/20', icon: ShoppingCart },
@@ -54,6 +57,36 @@ const horasRestantesReporte = (recibidoEn, ahora) => {
   return Math.max(0, Math.ceil((limite - ahora) / (60 * 60 * 1000)));
 };
 
+const fechaBoliviaISO = (fecha = new Date()) => {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(fecha);
+  const valor = (tipo) => partes.find((parte) => parte.type === tipo)?.value;
+  return `${valor('year')}-${valor('month')}-${valor('day')}`;
+};
+
+const rangoSemanaBolivia = (fecha = new Date()) => {
+  const hoy = fechaBoliviaISO(fecha);
+  const [anio, mes, dia] = hoy.split('-').map(Number);
+  const cursor = new Date(Date.UTC(anio, mes - 1, dia));
+  const desplazamiento = (cursor.getUTCDay() + 6) % 7;
+  const lunes = new Date(cursor);
+  lunes.setUTCDate(cursor.getUTCDate() - desplazamiento);
+  const domingo = new Date(lunes);
+  domingo.setUTCDate(lunes.getUTCDate() + 6);
+  return {
+    desde: lunes.toISOString().slice(0, 10),
+    hasta: domingo.toISOString().slice(0, 10),
+  };
+};
+
+const formatearFechaCorta = (iso) => (
+  new Date(`${iso}T12:00:00`).toLocaleDateString('es-BO', { day: '2-digit', month: 'short' })
+);
+
 const ESTADOS_PRODUCTO = [
   { valor: 'FRESCO', label: 'Fresco y refrigerado' },
   { valor: 'TIBIO', label: 'Fresco, pero tibio' },
@@ -75,10 +108,18 @@ const PASOS_SEGUIMIENTO = [
   { estado: 'ENTREGADO', label: 'Recibido' },
 ];
 
+const FILTROS_ACTIVOS = [
+  { id: 'todos', label: 'Todos', estados: null },
+  { id: 'pendientes', label: 'Pendientes', estados: ['PENDIENTE'] },
+  { id: 'en_camino', label: 'En camino', estados: ['RECOGIDO'] },
+  { id: 'por_recibir', label: 'Por recibir', estados: ['APROBADO', 'EN_PREPARACION', 'LISTO'] },
+];
+
 export default function PedidosSucursal() {
   const { perfil } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [pedidos, setPedidos] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -93,10 +134,23 @@ export default function PedidosSucursal() {
   const [fotosEntrega, setFotosEntrega] = useState({});
   const [enviandoObservacionPedido, setEnviandoObservacionPedido] = useState(null);
   const [errorReporte, setErrorReporte] = useState({});
+  const [reporteAbierto, setReporteAbierto] = useState(null);
   const [aprobandoPedido, setAprobandoPedido] = useState(null);
   const [rechazando, setRechazando] = useState(null);
   const [motivoRechazo, setMotivoRechazo] = useState('');
   const [enviandoRechazo, setEnviandoRechazo] = useState(false);
+  const [expandidoHistorial, setExpandidoHistorial] = useState(null);
+  const [filtroActivos, setFiltroActivos] = useState('todos');
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const [busquedaHistorial, setBusquedaHistorial] = useState('');
+  const [verArchivados, setVerArchivados] = useState(false);
+  const [procesandoArchivo, setProcesandoArchivo] = useState(null);
+  const [porEliminar, setPorEliminar] = useState(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [seleccionados, setSeleccionados] = useState([]);
+  const [procesandoMasivo, setProcesandoMasivo] = useState(false);
+  const [confirmarEliminarMasivo, setConfirmarEliminarMasivo] = useState(false);
 
   const [recibiendo, setRecibiendo] = useState(null);
   const [formRecepcion, setFormRecepcion] = useState({
@@ -109,9 +163,6 @@ export default function PedidosSucursal() {
   const [firma, setFirma] = useState(null);
   const [viendoEvidencia, setViendoEvidencia] = useState(null);
   const cargaEnCurso = useRef(false);
-  const estadosPedidosPrevios = useRef(null);
-  const avisoTimeout = useRef(null);
-  const [avisoPedido, setAvisoPedido] = useState(null);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -142,27 +193,7 @@ export default function PedidosSucursal() {
     try {
       if (!silencioso) setCargando(true);
       const pedidosActualizados = await pedidosRepository.listar();
-      const estadosAnteriores = estadosPedidosPrevios.current;
-      const cambios = estadosAnteriores
-        ? pedidosActualizados.filter((pedido) => (
-          estadosAnteriores.has(pedido.id) &&
-          estadosAnteriores.get(pedido.id) !== pedido.estado
-        ))
-        : [];
-
-      estadosPedidosPrevios.current = new Map(
-        pedidosActualizados.map((pedido) => [pedido.id, pedido.estado])
-      );
       setPedidos(pedidosActualizados);
-
-      if (cambios.length) {
-        const detalle = cambios.length === 1
-          ? `Pedido #${cambios[0].id}: ${ESTADOS[cambios[0].estado]?.label || cambios[0].estado}.`
-          : `${cambios.length} pedidos cambiaron de estado.`;
-        setAvisoPedido(detalle);
-        window.clearTimeout(avisoTimeout.current);
-        avisoTimeout.current = window.setTimeout(() => setAvisoPedido(null), 8000);
-      }
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudieron cargar los pedidos' });
     } finally {
@@ -174,16 +205,36 @@ export default function PedidosSucursal() {
   useEffect(() => {
     cargar();
 
-    const actualizarPedidos = () => {
+    // Realtime: escucha INSERT/UPDATE/DELETE en pedidos y tablas relacionadas.
+    // Cuando la pestaña vuelve a ser visible también recarga, por si el canal
+    // estuvo desconectado mientras la pestaña estaba oculta.
+    const actualizarSiVisible = () => {
       if (document.visibilityState === 'visible') cargar({ silencioso: true });
     };
-    const intervalo = window.setInterval(actualizarPedidos, 20000);
-    document.addEventListener('visibilitychange', actualizarPedidos);
+    document.addEventListener('visibilitychange', actualizarSiVisible);
+
+    const canal = supabase
+      .channel('sucursal-pedidos-rt')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos' },
+        () => cargar({ silencioso: true }),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedido_estado_historial' },
+        () => cargar({ silencioso: true }),
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedido_reportes_entrega' },
+        () => cargar({ silencioso: true }),
+      )
+      .subscribe();
 
     return () => {
-      window.clearInterval(intervalo);
-      document.removeEventListener('visibilitychange', actualizarPedidos);
-      window.clearTimeout(avisoTimeout.current);
+      supabase.removeChannel(canal);
+      document.removeEventListener('visibilitychange', actualizarSiVisible);
     };
   }, [cargar]);
 
@@ -212,20 +263,185 @@ export default function PedidosSucursal() {
     };
   }, [cargar, perfil?.sucursal_id]);
 
+  // Si el realtime no conecta, refrescamos igual cada 20 segundos.
   useEffect(() => {
-    if (!mensaje) return;
-    const t = setTimeout(() => setMensaje(null), 5000);
+    if (actualizacionEnVivo) return undefined;
+    const intervalo = window.setInterval(() => {
+      if (document.visibilityState === 'visible') cargar({ silencioso: true });
+    }, 20000);
+    return () => window.clearInterval(intervalo);
+  }, [actualizacionEnVivo, cargar]);
+
+  // Los errores quedan visibles hasta que el usuario los cierre.
+  useEffect(() => {
+    if (!mensaje || mensaje.tipo === 'error') return undefined;
+    const t = setTimeout(() => setMensaje(null), 6000);
     return () => clearTimeout(t);
   }, [mensaje]);
 
-  const activos = useMemo(() => pedidos.filter((p) => !ESTADOS_FINALIZADOS.includes(p.estado)), [pedidos]);
-  const historicos = useMemo(() => pedidos.filter((p) => ESTADOS_FINALIZADOS.includes(p.estado)), [pedidos]);
+  const activos = useMemo(
+    () => pedidos.filter((p) => !p.archivado && !ESTADOS_FINALIZADOS.includes(p.estado)),
+    [pedidos]
+  );
+  const activosFiltrados = useMemo(() => {
+    const filtro = FILTROS_ACTIVOS.find((item) => item.id === filtroActivos);
+    return filtro?.estados
+      ? activos.filter((pedido) => filtro.estados.includes(pedido.estado))
+      : activos;
+  }, [activos, filtroActivos]);
+  const conteosActivos = useMemo(
+    () => Object.fromEntries(
+      FILTROS_ACTIVOS.map((filtro) => [
+        filtro.id,
+        filtro.estados
+          ? activos.filter((pedido) => filtro.estados.includes(pedido.estado)).length
+          : activos.length,
+      ])
+    ),
+    [activos]
+  );
+  const etiquetaFiltroActivo = FILTROS_ACTIVOS.find((item) => item.id === filtroActivos)?.label || 'Todos';
+  const historicos = useMemo(
+    () => pedidos.filter((p) => ESTADOS_FINALIZADOS.includes(p.estado) && !p.archivado),
+    [pedidos]
+  );
+  const archivados = useMemo(() => pedidos.filter((p) => Boolean(p.archivado)), [pedidos]);
+
+  const filtrarPorFecha = useCallback((lista) => {
+    if (!fechaDesde && !fechaHasta) return lista;
+    return lista.filter((pedido) => {
+      const fecha = new Date(pedido.creado_en);
+      if (Number.isNaN(fecha.getTime())) return true;
+      if (fechaDesde) {
+        const desde = new Date(`${fechaDesde}T00:00:00`);
+        if (fecha < desde) return false;
+      }
+      if (fechaHasta) {
+        const hasta = new Date(`${fechaHasta}T23:59:59.999`);
+        if (fecha > hasta) return false;
+      }
+      return true;
+    });
+  }, [fechaDesde, fechaHasta]);
+
+  // Busca por numero de pedido, sucursal, fecha o estado. El texto se
+  // compara en minusculas para no depender de mayusculas ni acentos.
+  const filtrarPorBusqueda = useCallback((lista) => {
+    const texto = busquedaHistorial.trim().toLowerCase();
+    if (!texto) return lista;
+    const sinAlfiler = texto.replace(/^#/, '');
+    return lista.filter((pedido) => {
+      const campos = [
+        String(pedido.id),
+        pedido.sucursales?.nombre,
+        pedido.estado,
+        new Date(pedido.creado_en).toLocaleDateString('es-BO'),
+      ];
+      return campos.some((valor) =>
+        String(valor || '').toLowerCase().includes(sinAlfiler)
+      );
+    });
+  }, [busquedaHistorial]);
+
+  const historicosFiltrados = useMemo(
+    () => filtrarPorBusqueda(filtrarPorFecha(historicos)),
+    [filtrarPorBusqueda, filtrarPorFecha, historicos]
+  );
+  const archivadosFiltrados = useMemo(
+    () => filtrarPorBusqueda(filtrarPorFecha(archivados)),
+    [filtrarPorBusqueda, filtrarPorFecha, archivados]
+  );
+  const listaHistorial = verArchivados ? archivadosFiltrados : historicosFiltrados;
+  const esReportePendiente = useCallback((pedido) => {
+    const recepcion = pedido.pedido_recepciones?.[0];
+    return pedido.estado === 'ENTREGADO'
+      && Boolean(recepcion?.recibido_en)
+      && !pedido.reporte_entrega
+      && puedeEnviarObservacionesEntrega(recepcion.recibido_en, ahora);
+  }, [ahora]);
+
   const resumen = useMemo(() => ({
     pendientes: pedidos.filter((p) => p.estado === 'PENDIENTE').length,
+    porRecibir: pedidos.filter((p) => ['APROBADO', 'EN_PREPARACION', 'LISTO'].includes(p.estado)).length,
     enCamino: pedidos.filter((p) => p.estado === 'RECOGIDO').length,
     entregados: pedidos.filter((p) => p.estado === 'ENTREGADO').length,
     rechazados: pedidos.filter((p) => ['CANCELADO', 'RECHAZADO'].includes(p.estado)).length,
-  }), [pedidos]);
+    reportesPendientes: pedidos.filter(esReportePendiente).length,
+  }), [pedidos, esReportePendiente]);
+
+  const resumenSemana = useMemo(() => {
+    const { desde, hasta } = rangoSemanaBolivia(new Date(ahora));
+    const deLaSemana = pedidos.filter((p) => p.fecha >= desde && p.fecha <= hasta);
+    const pedidas = deLaSemana.reduce((total, p) => total + (Number(p.unidades) || 0), 0);
+    const recibidas = deLaSemana.reduce(
+      (total, p) => total + (Number(p.pedido_recepciones?.[0]?.unidades_recibidas) || 0),
+      0
+    );
+    const faltantes = deLaSemana.reduce((total, p) => {
+      const recepcion = p.pedido_recepciones?.[0];
+      if (!recepcion) return total;
+      return total + Math.max(0, (Number(p.unidades) || 0) - (Number(recepcion.unidades_recibidas) || 0));
+    }, 0);
+    const conFaltantes = deLaSemana.filter((p) => {
+      const recepcion = p.pedido_recepciones?.[0];
+      return recepcion && Number(recepcion.unidades_recibidas) < Number(p.unidades);
+    }).length;
+    const porcentajeRecibido = pedidas > 0 ? Math.min(100, Math.round((recibidas / pedidas) * 100)) : 0;
+
+    return {
+      desde,
+      hasta,
+      rango: `${formatearFechaCorta(desde)} – ${formatearFechaCorta(hasta)}`,
+      total: deLaSemana.length,
+      pedidas,
+      recibidas,
+      faltantes,
+      conFaltantes,
+      porcentajeRecibido,
+    };
+  }, [pedidos, ahora]);
+
+  const abrirReportesPendientes = () => {
+    const pendiente = pedidos.find(esReportePendiente);
+    if (!pendiente) return;
+    setVista('historial');
+    setVerArchivados(Boolean(pendiente.archivado));
+    setFechaDesde('');
+    setFechaHasta('');
+    setExpandidoHistorial(pendiente.id);
+  };
+
+  // Cuando llegas desde un aviso (?pedido=12), abrimos el pedido
+  // exacto: la pestana que corresponde, lo expandimos si esta en el
+  // historial y hacemos scroll hasta el. Despues limpiamos el parametro
+  // para que al recargar no vuelva a saltar.
+  const pedidoObjetivo = searchParams.get('pedido');
+  useEffect(() => {
+    if (!pedidoObjetivo || !pedidos.length) return;
+
+    const objetivo = pedidos.find((p) => String(p.id) === String(pedidoObjetivo));
+    if (!objetivo) return;
+
+    const enHistorial = ESTADOS_FINALIZADOS.includes(objetivo.estado);
+    if (enHistorial) {
+      setVista('historial');
+      setVerArchivados(Boolean(objetivo.archivado));
+      setFechaDesde('');
+      setFechaHasta('');
+      setExpandidoHistorial(objetivo.id);
+    } else {
+      setVista('pedidos');
+      setFiltroActivos('todos');
+    }
+
+    const t = setTimeout(() => {
+      const nodo = document.querySelector(`[data-pedido-id="${objetivo.id}"]`);
+      nodo?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+
+    setSearchParams({}, { replace: true });
+    return () => clearTimeout(t);
+  }, [pedidoObjetivo, pedidos, setSearchParams]);
 
   // El bloque de seguimiento solo tiene sentido para un pedido que
   // todavía esta en curso. Antes se caia al ultimo pedido de todos
@@ -236,9 +452,11 @@ export default function PedidosSucursal() {
     const ordenar = (a, b) => (
       new Date(b.actualizado_en || b.creado_en || 0) - new Date(a.actualizado_en || a.creado_en || 0)
     );
-    const enCamino = pedidos.filter((p) => p.estado === 'RECOGIDO');
+    const enCamino = pedidos.filter((p) => !p.archivado && p.estado === 'RECOGIDO');
     if (enCamino.length) return [...enCamino].sort(ordenar)[0];
-    const activosPedidos = pedidos.filter((p) => !ESTADOS_FINALIZADOS.includes(p.estado));
+    const activosPedidos = pedidos.filter(
+      (p) => !p.archivado && !ESTADOS_FINALIZADOS.includes(p.estado)
+    );
     if (!activosPedidos.length) return null;
     return [...activosPedidos].sort(ordenar)[0] || null;
   }, [pedidos]);
@@ -247,6 +465,28 @@ export default function PedidosSucursal() {
   const hayFaltantesEnRecepcion = Boolean(recibiendo) && unidadesRecibidas < recibiendo.unidades;
   const excedeEnRecepcion = Boolean(recibiendo) && unidadesRecibidas > recibiendo.unidades;
   const faltaObservacionFaltante = hayFaltantesEnRecepcion && !formRecepcion.observaciones.trim();
+
+  const [cancelandoPedidoId, setCancelandoPedidoId] = useState(null);
+  const [pedidoAConfirmar, setPedidoAConfirmar] = useState(null);
+
+  const handleCancelar = async (pedidoId, motivo) => {
+    try {
+      setEnviandoRechazo(true);
+      const { error } = await supabase.rpc('cancelar_pedido', {
+        p_pedido_id: pedidoId,
+        p_motivo: motivo,
+      });
+      if (error) throw error;
+      setMensaje({ tipo: 'exito', texto: `Pedido #${pedidoId} cancelado.` });
+      setPedidoAConfirmar(null);
+      setMotivoRechazo('');
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo cancelar' });
+    } finally {
+      setEnviandoRechazo(false);
+    }
+  };
 
   // Rechazar un pedido: se pide el motivo, porque la sucursal puede
   // rechazar por motivos que el administrador necesita ver.
@@ -271,11 +511,161 @@ export default function PedidosSucursal() {
       setMensaje({ tipo: 'exito', texto: `Pedido #${rechazando.id} rechazado. El administrador fue avisado.` });
       setRechazando(null);
       setMotivoRechazo('');
-      await cargar();
+      await cargar({ silencioso: true });
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudo rechazar el pedido' });
     } finally {
       setEnviandoRechazo(false);
+    }
+  };
+
+  // Archivar no borra: el pedido sale del historial y queda en la
+  // pestana de archivados, donde recien se puede eliminar.
+  const handleArchivar = async (pedido, archivado) => {
+    try {
+      setProcesandoArchivo(pedido.id);
+      await pedidosRepository.archivar(pedido.id, archivado);
+      setMensaje({
+        tipo: 'exito',
+        texto: archivado
+          ? `Pedido #${pedido.id} archivado.`
+          : `Pedido #${pedido.id} restaurado al historial.`,
+      });
+      if (archivado && expandidoHistorial === pedido.id) setExpandidoHistorial(null);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo archivar el pedido' });
+    } finally {
+      setProcesandoArchivo(null);
+    }
+  };
+
+  const handleEliminarArchivado = async () => {
+    if (!porEliminar) return;
+    try {
+      setEliminando(true);
+      await pedidosRepository.eliminarArchivado(porEliminar.id);
+      setMensaje({ tipo: 'exito', texto: `Pedido #${porEliminar.id} eliminado definitivamente.` });
+      setPorEliminar(null);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar el pedido' });
+    } finally {
+      setEliminando(false);
+    }
+  };
+
+  // Descarga el historial (o los archivados) como CSV, respetando los
+  // filtros activos. Se arma a mano para no depender de librerias.
+  const exportarHistorialCSV = () => {
+    if (!listaHistorial.length) {
+      setMensaje({ tipo: 'aviso', texto: 'No hay pedidos para exportar con los filtros actuales.' });
+      return;
+    }
+
+    const escapar = (valor) => `"${String(valor ?? '').replace(/"/g, '""')}"`;
+    const fecha = (valor) => (valor ? new Date(valor).toLocaleString('es-BO') : '');
+
+    const encabezados = [
+      'Pedido', 'Estado', 'Unidades pedidas', 'Unidades recibidas', 'Faltantes',
+      'Recibido por', 'Fecha recibo', 'Sucursal', 'Archivado', 'Creado', 'Observaciones de recepción',
+    ];
+
+    const filas = listaHistorial.map((p) => {
+      const recepcion = p.pedido_recepciones?.[0];
+      const pedidas = Number(p.unidades) || 0;
+      const recibidas = recepcion ? Number(recepcion.unidades_recibidas) || 0 : '';
+      const faltantes = recepcion ? Math.max(0, pedidas - (Number(recepcion.unidades_recibidas) || 0)) : '';
+      return [
+        `#${p.id}`,
+        ESTADOS[p.estado]?.label || p.estado,
+        pedidas,
+        recibidas,
+        faltantes,
+        recepcion?.recibido_por_nombre || '',
+        fecha(recepcion?.recibido_en),
+        p.sucursales?.nombre || '',
+        p.archivado ? 'Sí' : 'No',
+        fecha(p.creado_en),
+        recepcion?.observaciones || '',
+      ];
+    });
+
+    const csv = [encabezados, ...filas]
+      .map((fila) => fila.map(escapar).join(';'))
+      .join('\r\n');
+
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    const hoy = new Date().toISOString().slice(0, 10);
+    enlace.href = url;
+    enlace.download = `pedidos-${verArchivados ? 'archivados' : 'historial'}-${hoy}.csv`;
+    document.body.appendChild(enlace);
+    enlace.click();
+    document.body.removeChild(enlace);
+    URL.revokeObjectURL(url);
+  };
+
+  // Seleccion multiple en el historial y en archivados. Solo aplica a
+  // archivar, restaurar y eliminar; cancelar o rechazar siguen de a uno.
+  const alternarSeleccion = (id) => {
+    setSeleccionados((actuales) =>
+      actuales.includes(id) ? actuales.filter((x) => x !== id) : [...actuales, id]
+    );
+  };
+
+  const seleccionarTodos = () => {
+    const visibles = listaHistorial.map((p) => p.id);
+    const todos = visibles.length > 0 && visibles.every((id) => seleccionados.includes(id));
+    setSeleccionados(todos ? [] : visibles);
+  };
+
+  const limpiarSeleccion = () => setSeleccionados([]);
+
+  const handleArchivarMasivo = async (archivar) => {
+    if (!seleccionados.length) return;
+    setProcesandoMasivo(true);
+    try {
+      await Promise.all(seleccionados.map((id) => pedidosRepository.archivar(id, archivar)));
+      setMensaje({
+        tipo: 'exito',
+        texto: archivar
+          ? `${seleccionados.length} pedido(s) archivado(s).`
+          : `${seleccionados.length} pedido(s) restaurado(s).`,
+      });
+      setSeleccionados([]);
+      if (expandidoHistorial && seleccionados.includes(expandidoHistorial)) {
+        setExpandidoHistorial(null);
+      }
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo completar la acción masiva' });
+      // Si una operacion del Promise.all fallo, las anteriores ya
+      // quedaron aplicadas. Se recarga para reflejar el estado real.
+      await cargar({ silencioso: true });
+    } finally {
+      setProcesandoMasivo(false);
+    }
+  };
+
+  const handleEliminarMasivo = async () => {
+    if (!seleccionados.length) return;
+    setProcesandoMasivo(true);
+    try {
+      await Promise.all(seleccionados.map((id) => pedidosRepository.eliminarArchivado(id)));
+      setMensaje({ tipo: 'exito', texto: `${seleccionados.length} pedido(s) eliminado(s).` });
+      setSeleccionados([]);
+      if (expandidoHistorial && seleccionados.includes(expandidoHistorial)) {
+        setExpandidoHistorial(null);
+      }
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudieron eliminar los pedidos' });
+      await cargar({ silencioso: true });
+    } finally {
+      setProcesandoMasivo(false);
+      setConfirmarEliminarMasivo(false);
     }
   };
 
@@ -302,6 +692,13 @@ export default function PedidosSucursal() {
     const unidades = Number(formRecepcion.unidades_recibidas);
     if (!Number.isInteger(unidades) || unidades < 0) {
       setMensaje({ tipo: 'error', texto: 'Ingresa un número entero de unidades recibidas.' });
+      return;
+    }
+    if (unidades > recibiendo.unidades) {
+      setMensaje({
+        tipo: 'error',
+        texto: `No puedes recibir más de ${recibiendo.unidades} unidades. Corregí el número.`,
+      });
       return;
     }
     if (!formRecepcion.recibido_por.trim()) {
@@ -341,7 +738,7 @@ export default function PedidosSucursal() {
           : 'Recepción registrada con foto y firma. El pedido quedó entregado.',
       });
       setRecibiendo(null);
-      await cargar();
+      await cargar({ silencioso: true });
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudo registrar la recepción' });
     } finally {
@@ -363,7 +760,7 @@ export default function PedidosSucursal() {
         tipo: 'error',
         texto: 'Marca el estado del pollo, escribe una observación o adjunta una foto.',
       });
-      return;
+      return false;
     }
 
     try {
@@ -379,6 +776,7 @@ export default function PedidosSucursal() {
       setFotosEntrega((actuales) => ({ ...actuales, [pedido.id]: [] }));
       setMensaje({ tipo: 'exito', texto: `Reporte de entrega del pedido #${pedido.id} enviado.` });
       await cargar({ silencioso: true });
+      return true;
     } catch (err) {
       // El error se muestra tambien junto al boton: el banner de
       // arriba de la pagina queda fuera de la vista cuando el
@@ -386,6 +784,7 @@ export default function PedidosSucursal() {
       const detalle = err.message || 'No se pudo enviar el reporte.';
       setErrorReporte((actuales) => ({ ...actuales, [pedido.id]: detalle }));
       setMensaje({ tipo: 'error', texto: detalle });
+      return false;
     } finally {
       setEnviandoObservacionPedido(null);
     }
@@ -419,6 +818,71 @@ export default function PedidosSucursal() {
     }
   };
 
+  const renderReporteEntrega = (pedido, recepcion, reporte) => {
+    if (pedido.estado !== 'ENTREGADO' || !recepcion || !(esSucursal || esAdminReporte)) {
+      return null;
+    }
+
+    return (
+      <div className={`mt-3 rounded-xl border p-3 ${darkMode ? 'border-purple-900/60 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
+        <p className={`text-xs font-bold ${strong}`}>Reporte de entrega (opcional)</p>
+        {reporte?.observaciones_entrega || reporte?.estado_producto ? (
+          <>
+            {reporte.estado_producto && (
+              <p className={`mt-2 text-sm ${normal}`}>
+                Estado del pollo:{' '}
+                <span className="font-bold">
+                  {ETIQUETA_ESTADO_PRODUCTO[reporte.estado_producto] || reporte.estado_producto}
+                </span>
+              </p>
+            )}
+            {reporte.observaciones_entrega && (
+              <p className={`mt-1 whitespace-pre-wrap text-sm ${normal}`}>{reporte.observaciones_entrega}</p>
+            )}
+            {reporte.fotos_observaciones?.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {reporte.fotos_observaciones.map((ruta) => (
+                  <button
+                    key={ruta}
+                    onClick={() => verEvidencia('Foto del reporte de entrega', ruta)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border transition ${input}`}
+                  >
+                    <Images size={12} /> Ver foto
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className={`mt-1 text-[10px] ${muted}`}>
+              Enviado {reporte.observaciones_entrega_en
+                ? `el ${new Date(reporte.observaciones_entrega_en).toLocaleString('es-BO', { timeZone: 'America/La_Paz' })}`
+                : ''}
+            </p>
+          </>
+        ) : esSucursal && puedeEnviarObservacionesEntrega(recepcion.recibido_en, ahora) ? (
+          <>
+            <p className={`mt-1 text-[11px] ${muted}`}>
+              ¿En qué estado te entregaron el pollo? Podés marcarlo, escribir una observación y adjuntar fotos.
+              Te quedan {horasRestantesReporte(recepcion.recibido_en, ahora)} h para enviarlo (7 días desde la recepción).
+            </p>
+            <button
+              type="button"
+              onClick={() => setReporteAbierto(pedido)}
+              className="mt-2 flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-purple-700"
+            >
+              <FileCheck2 size={14} /> Reportar entrega
+            </button>
+          </>
+        ) : esSucursal ? (
+          <p className={`mt-1 text-[11px] ${muted}`}>
+            El plazo para enviar el reporte venció: era 7 días después de recibir el pedido.
+          </p>
+        ) : (
+          <p className={`mt-1 text-[11px] ${muted}`}>La sucursal aún no envió observaciones.</p>
+        )}
+      </div>
+    );
+  };
+
   const renderPedido = (p) => {
     const est = ESTADOS[p.estado] || ESTADOS.PENDIENTE;
     const Icono = est.icon;
@@ -433,7 +897,7 @@ export default function PedidosSucursal() {
     const falta = p.estado === 'RECOGIDO';
 
     return (
-      <div key={p.id} className={`${card} border rounded-2xl p-4`}>
+      <div key={p.id} data-pedido-id={p.id} className={`${card} border rounded-2xl p-4`}>
         <div className="flex items-start gap-3">
           <div className={`p-2.5 rounded-xl shrink-0 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
             <Icono size={17} className="text-amber-500" />
@@ -629,123 +1093,7 @@ export default function PedidosSucursal() {
               </>
             )}
 
-            {p.estado === 'ENTREGADO'
-              && recepcion
-              && (esSucursal || esAdminReporte)
-              && (
-              <div className={`mt-3 rounded-xl border p-3 ${darkMode ? 'border-purple-900/60 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
-                <p className={`text-xs font-bold ${strong}`}>Reporte de entrega (opcional)</p>
-                {reporte?.observaciones_entrega || reporte?.estado_producto ? (
-                  <>
-                    {reporte.estado_producto && (
-                      <p className={`mt-2 text-sm ${normal}`}>
-                        Estado del pollo:{' '}
-                        <span className="font-bold">
-                          {ETIQUETA_ESTADO_PRODUCTO[reporte.estado_producto] || reporte.estado_producto}
-                        </span>
-                      </p>
-                    )}
-                    {reporte.observaciones_entrega && (
-                      <p className={`mt-1 whitespace-pre-wrap text-sm ${normal}`}>{reporte.observaciones_entrega}</p>
-                    )}
-                    {reporte.fotos_observaciones?.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {reporte.fotos_observaciones.map((ruta) => (
-                          <button
-                            key={ruta}
-                            onClick={() => verEvidencia('Foto del reporte de entrega', ruta)}
-                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold border transition ${input}`}
-                          >
-                            <Images size={12} /> Ver foto
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <p className={`mt-1 text-[10px] ${muted}`}>
-                      Enviado {reporte.observaciones_entrega_en
-                        ? `el ${new Date(reporte.observaciones_entrega_en).toLocaleString('es-BO', { timeZone: 'America/La_Paz' })}`
-                        : ''}
-                    </p>
-                  </>
-                ) : esSucursal && puedeEnviarObservacionesEntrega(recepcion.recibido_en, ahora) ? (
-                  <>
-                    <p className={`mt-1 text-[11px] ${muted}`}>
-                      ¿En qué estado te entregaron el pollo? Marcá una opción, escribí si hace falta y adjuntá fotos.
-                      Te quedan {horasRestantesReporte(recepcion.recibido_en, ahora)} h para enviarlo (7 días desde la recepción).
-                      Si no tenés nada que reportar, no necesitás llenar nada.
-                    </p>
-                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-              {ESTADOS_PRODUCTO.map((opcion) => {
-                const activo = (estadoEntrega[p.id] || '') === opcion.valor;
-                return (
-                  <button
-                            key={opcion.valor}
-                            type="button"
-                            onClick={() => setEstadoEntrega((actuales) => ({
-                              ...actuales,
-                              [p.id]: activo ? '' : opcion.valor,
-                            }))}
-                            className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] font-bold border transition ${
-                              activo
-                                ? 'bg-purple-500/15 border-purple-500/40 text-purple-500'
-                                : darkMode
-                                  ? 'bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-800'
-                                  : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
-                            }`}
-                          >
-                            {activo
-                              ? <CheckCircle size={13} className="shrink-0" />
-                              : <span className="h-3 w-3 shrink-0 rounded-full border border-current" />}
-                            {opcion.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <textarea
-                      rows={3}
-                      maxLength={2000}
-                      value={observacionesEntrega[p.id] || ''}
-                      onChange={(e) => setObservacionesEntrega((actuales) => ({
-                        ...actuales,
-                        [p.id]: e.target.value,
-                      }))}
-                      placeholder="Escribe aquí la observación sobre el pedido recibido"
-                      className={`mt-2 w-full rounded-lg border px-3 py-2 text-sm ${input}`}
-                    />
-                    <FotosObservaciones
-                      fotos={fotosEntrega[p.id] || []}
-                      onCambio={(fotos) => setFotosEntrega((actuales) => ({ ...actuales, [p.id]: fotos }))}
-                      onError={(texto) => setMensaje({ tipo: 'error', texto })}
-                      theme={{ borde: bordeInput, texto: label, tenue: muted, hoja: card }}
-                    />
-                    <div className="mt-2 flex items-center justify-between gap-2">
-                      <span className={`text-[10px] ${muted}`}>
-                        {(observacionesEntrega[p.id] || '').length}/2000
-                      </span>
-                      <button
-                        onClick={() => handleEnviarObservacionesEntrega(p)}
-                        disabled={enviandoObservacionPedido === p.id}
-                        className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-purple-700 disabled:opacity-60"
-                      >
-                        {enviandoObservacionPedido === p.id ? 'Enviando...' : 'Enviar reporte'}
-                      </button>
-                    </div>
-                    {errorReporte[p.id] && (
-                      <p className="mt-2 flex items-start gap-1.5 text-[11px] font-semibold text-red-500">
-                        <AlertCircle size={13} className="mt-px shrink-0" />
-                        {errorReporte[p.id]}
-                      </p>
-                    )}
-                  </>
-                ) : esSucursal ? (
-                  <p className={`mt-1 text-[11px] ${muted}`}>
-                    El plazo para enviar el reporte venció: era 7 días después de recibir el pedido.
-                  </p>
-                ) : (
-                  <p className={`mt-1 text-[11px] ${muted}`}>La sucursal aún no envió observaciones.</p>
-                )}
-              </div>
-            )}
+            {renderReporteEntrega(p, recepcion, reporte)}
 
             {p.estado === 'PENDIENTE' && esAdmin && (
               <button
@@ -759,12 +1107,22 @@ export default function PedidosSucursal() {
             )}
 
             {p.estado === 'PENDIENTE' && esSucursal && (
-              <button
-                onClick={() => abrirRechazo(p)}
-                className={`mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border transition ${darkMode ? 'border-slate-800 text-slate-400 hover:border-slate-800' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
-              >
-                <XCircle size={14} /> Rechazar pedido
-              </button>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => setPedidoAConfirmar(p)}
+                  disabled={cancelandoPedidoId === p.id}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
+                >
+                  {cancelandoPedidoId === p.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                  Cancelar pedido
+                </button>
+                <button
+                  onClick={() => abrirRechazo(p)}
+                  className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition ${darkMode ? 'border-slate-800 text-slate-400 hover:border-slate-700' : 'border-gray-200 text-gray-500 hover:bg-gray-100'}`}
+                >
+                  <XCircle size={13} /> Rechazar pedido
+                </button>
+              </div>
             )}
 
             {p.estado === 'RECHAZADO' && (
@@ -784,52 +1142,217 @@ export default function PedidosSucursal() {
   // El historial se muestra en su propia pestana: los pedidos que ya
   // terminaron, con la fecha de entrega y el reporte que mando la
   // sucursal.
-  const renderHistorial = (item) => {
+  const renderHistorial = (item, archivado = false) => {
     const estadoInfo = ESTADOS[item.estado] || ESTADOS.PENDIENTE;
     const IconoHistorial = estadoInfo.icon;
     const recepcionHistorial = item.pedido_recepciones?.[0];
     const reporteHistorial = item.reporte_entrega;
+    const abierto = expandidoHistorial === item.id;
+    const enProceso = procesandoArchivo === item.id;
 
     return (
-      <div key={item.id} className={`${card} border rounded-2xl p-4`}>
-        <div className="flex items-start gap-3">
-          <span className={`p-2.5 rounded-xl border shrink-0 ${estadoInfo.badge}`}>
-            <IconoHistorial size={17} />
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`text-sm font-black ${strong}`}>Pedido #{item.id}</span>
-              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${estadoInfo.badge}`}>
-                {estadoInfo.label}
-              </span>
-            </div>
-            <p className={`mt-1 text-xs ${muted}`}>
-              {item.unidades} unidades · pedido el {new Date(item.creado_en).toLocaleDateString('es-BO')}
-              {recepcionHistorial?.recibido_en
-                ? ` · recibido el ${new Date(recepcionHistorial.recibido_en).toLocaleString('es-BO', {
-                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                })}`
-                : ''}
-            </p>
-            {reporteHistorial?.estado_producto && (
-              <p className={`mt-2 text-xs ${normal}`}>
-                Estado del pollo:{' '}
-                <span className="font-bold">
-                  {ETIQUETA_ESTADO_PRODUCTO[reporteHistorial.estado_producto] || reporteHistorial.estado_producto}
+      <div key={item.id} data-pedido-id={item.id} className={`${card} border rounded-2xl overflow-hidden`}>
+        <div className="flex items-start">
+          <label className="flex items-center pl-4 pt-4" title="Seleccionar para acciones en lote">
+            <input
+              type="checkbox"
+              checked={seleccionados.includes(item.id)}
+              onChange={() => alternarSeleccion(item.id)}
+              className="h-4 w-4 cursor-pointer accent-amber-500"
+              aria-label={`Seleccionar pedido #${item.id}`}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setExpandidoHistorial(abierto ? null : item.id)}
+            aria-expanded={abierto}
+            className="flex-1 p-4 text-left"
+          >
+          <div className="flex items-start gap-3">
+            <span className={`p-2.5 rounded-xl border shrink-0 ${estadoInfo.badge}`}>
+              <IconoHistorial size={17} />
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-sm font-black ${strong}`}>Pedido #{item.id}</span>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${estadoInfo.badge}`}>
+                  {estadoInfo.label}
                 </span>
+                {archivado && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${darkMode ? 'border-slate-700 text-slate-400' : 'border-gray-300 text-gray-500'}`}>
+                    Archivado
+                  </span>
+                )}
+              </div>
+              <p className={`mt-1 text-xs ${muted}`}>
+                {item.unidades} unidades · pedido el {new Date(item.creado_en).toLocaleDateString('es-BO')}
+                {recepcionHistorial?.recibido_en
+                  ? ` · recibido el ${new Date(recepcionHistorial.recibido_en).toLocaleString('es-BO', {
+                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                  })}`
+                  : ''}
               </p>
+            </div>
+            <span className={`p-1.5 rounded-lg border shrink-0 ${darkMode ? 'border-slate-800 text-slate-400' : 'border-gray-200 text-gray-500'}`}>
+              <ChevronDown size={16} className={`transition-transform ${abierto ? 'rotate-180' : ''}`} />
+            </span>
+          </div>
+          </button>
+        </div>
+
+        {abierto && (
+          <div className={`space-y-3 border-t px-4 pb-4 pt-3 ${darkMode ? 'border-slate-800' : 'border-gray-200'}`}>
+            {item.observaciones && (
+              <p className={`text-xs italic ${muted}`}>“{item.observaciones}”</p>
             )}
-            {reporteHistorial?.observaciones_entrega && (
-              <p className={`mt-1 whitespace-pre-wrap text-sm ${normal}`}>“{reporteHistorial.observaciones_entrega}”</p>
+
+            {reporteHistorial?.observaciones_entrega || reporteHistorial?.estado_producto ? (
+              <div className={`rounded-xl border p-3 ${darkMode ? 'border-purple-900/60 bg-purple-950/20' : 'border-purple-200 bg-purple-50'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Reporte de entrega</p>
+                {reporteHistorial.estado_producto && (
+                  <p className={`mt-1 text-xs ${normal}`}>
+                    Estado del pollo:{' '}
+                    <span className="font-bold">
+                      {ETIQUETA_ESTADO_PRODUCTO[reporteHistorial.estado_producto] || reporteHistorial.estado_producto}
+                    </span>
+                  </p>
+                )}
+                {reporteHistorial.observaciones_entrega && (
+                  <p className={`mt-1 whitespace-pre-wrap text-sm ${normal}`}>{reporteHistorial.observaciones_entrega}</p>
+                )}
+                {reporteHistorial.fotos_observaciones?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {reporteHistorial.fotos_observaciones.map((ruta) => (
+                      <button
+                        key={ruta}
+                        type="button"
+                        onClick={() => verEvidencia('Foto del reporte de entrega', ruta)}
+                        className={`flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition ${input}`}
+                      >
+                        <Images size={12} /> Ver foto
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : esSucursal ? null : (
+              <p className={`text-[11px] ${muted}`}>La sucursal no envió reporte de entrega.</p>
             )}
+
+            {recepcionHistorial && (
+              <div className={`rounded-xl border p-3 ${darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-gray-200 bg-gray-50'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Recepción</p>
+                <p className={`mt-1 text-xs ${normal}`}>
+                  {recepcionHistorial.unidades_recibidas} unidades recibidas
+                  {recepcionHistorial.recibido_por_nombre
+                    ? ` · recibió ${recepcionHistorial.recibido_por_nombre}`
+                    : ''}
+                </p>
+                {recepcionHistorial.faltantes && (
+                  <p className="mt-1 text-xs font-bold text-amber-500">
+                    Con faltantes: se pidieron {item.unidades} y llegaron {recepcionHistorial.unidades_recibidas}
+                  </p>
+                )}
+                {recepcionHistorial.observaciones && (
+                  <p className={`mt-1 text-xs italic ${muted}`}>“{recepcionHistorial.observaciones}”</p>
+                )}
+                {(recepcionHistorial.foto_url || recepcionHistorial.firma_url || recepcionHistorial.fotos_extra?.length > 0) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {recepcionHistorial.foto_url && (
+                      <button
+                        type="button"
+                        onClick={() => verEvidencia('Foto de la entrega', recepcionHistorial.foto_url)}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${input}`}
+                      >
+                        <Camera size={12} /> Ver foto
+                      </button>
+                    )}
+                    {recepcionHistorial.firma_url && (
+                      <button
+                        type="button"
+                        onClick={() => verEvidencia('Firma de recepción', recepcionHistorial.firma_url)}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${input}`}
+                      >
+                        <FileCheck2 size={12} /> Ver firma
+                      </button>
+                    )}
+                    {recepcionHistorial.fotos_extra?.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => verEvidencia(`Fotos de apoyo (${recepcionHistorial.fotos_extra.length})`, recepcionHistorial.fotos_extra[0])}
+                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${input}`}
+                      >
+                        <Images size={12} /> +{recepcionHistorial.fotos_extra.length} fotos
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {esSucursal && !reporteHistorial && renderReporteEntrega(item, recepcionHistorial, reporteHistorial)}
+
             {item.estado === 'RECHAZADO' && item.motivo_rechazo && (
-              <p className={`mt-2 rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs ${normal}`}>
+              <p className={`rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs ${normal}`}>
                 <span className="font-bold text-rose-400">Motivo del rechazo: </span>
                 {item.motivo_rechazo}
               </p>
             )}
+
+            {item.historial_estado?.length > 0 && (
+              <details className={`rounded-xl border ${darkMode ? 'border-slate-800 bg-slate-950/40' : 'border-gray-200 bg-gray-50'}`}>
+                <summary className={`cursor-pointer px-3 py-2 text-xs font-bold ${normal}`}>
+                  Historial de actualizaciones ({item.historial_estado.length})
+                </summary>
+                <ol className="space-y-2 px-3 pb-3 pt-1">
+                  {[...item.historial_estado].reverse().map((evento) => (
+                    <li key={evento.id} className={`text-[11px] ${muted}`}>
+                      <span className={`font-semibold ${strong}`}>
+                        {ESTADOS[evento.estado]?.label || evento.estado}
+                      </span>
+                      {' · '}
+                      {new Date(evento.cambiado_en).toLocaleString('es-BO', {
+                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                      })}
+                      {evento.cambiado_por_nombre ? ` · ${evento.cambiado_por_nombre}` : ''}
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              {archivado ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleArchivar(item, false)}
+                    disabled={enProceso}
+                    className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition disabled:opacity-60 ${input}`}
+                  >
+                    <ArchiveRestore size={14} /> Restaurar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPorEliminar(item)}
+                    className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-500 transition hover:bg-rose-500/20"
+                  >
+                    <Trash2 size={14} /> Eliminar
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleArchivar(item, true)}
+                  disabled={enProceso}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition disabled:opacity-60 ${input}`}
+                >
+                  <Archive size={14} /> {enProceso ? 'Archivando...' : 'Archivar'}
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -852,13 +1375,11 @@ export default function PedidosSucursal() {
               </div>
               <div className="min-w-0">
                 <h1 className={`text-base md:text-xl font-black tracking-tight truncate ${strong}`}>
-                  {vista === 'entregas'
-                    ? 'Entregas directas'
-                    : vista === 'historial'
-                      ? 'Historial de pedidos'
-                      : esVistaAdmin
-                        ? 'Seguimiento de pedidos'
-                        : 'Mis Pedidos'}
+                  {vista === 'historial'
+                    ? 'Historial de pedidos'
+                    : esVistaAdmin
+                      ? 'Seguimiento de pedidos'
+                      : 'Mis Pedidos'}
                 </h1>
                 <p className={`text-[10px] md:text-xs font-medium ${muted}`}>
                   {perfil?.sucursales?.nombre || (esVistaAdmin ? 'Vista administrativa' : 'Mi sucursal')}
@@ -878,6 +1399,18 @@ export default function PedidosSucursal() {
               >
                 <Inbox size={18} />
               </button>
+            )}
+            {esSucursal && (
+              <PanelNotificaciones
+                titulo="Mis avisos"
+                textoVacio="Todavia no tenes avisos de tus pedidos."
+                rutaBandeja="/sucursal/avisos"
+                rutaPedido="/sucursal"
+                mostrarSucursal={false}
+                alAbrirAviso={(aviso) =>
+                  navigate(aviso.pedido_id ? `/sucursal?pedido=${aviso.pedido_id}` : '/sucursal')
+                }
+              />
             )}
             <button
               onClick={toggleTheme}
@@ -920,13 +1453,6 @@ export default function PedidosSucursal() {
             </button>
             <button
               type="button"
-              onClick={() => setVista('entregas')}
-              className={tabClase(vista === 'entregas')}
-            >
-              <Store size={15} /> Entregas directas
-            </button>
-            <button
-              type="button"
               onClick={() => setVista('historial')}
               className={tabClase(vista === 'historial')}
             >
@@ -937,27 +1463,6 @@ export default function PedidosSucursal() {
       </header>
 
       <main className="max-w-4xl mx-auto px-4 md:px-6 py-5 space-y-5">
-        {vista === 'entregas' ? (
-          <EntregasDirectas />
-        ) : vista === 'historial' ? (
-          <section>
-            <h2 className={`text-xs font-bold uppercase tracking-wider mb-2.5 ${muted}`}>
-              Historial de pedidos ({historicos.length})
-            </h2>
-            {historicos.length === 0 ? (
-              <div className={`${card} border rounded-2xl py-12 text-center ${muted}`}>
-                <History size={28} className="mx-auto mb-2 opacity-40" />
-                <p className="text-sm font-semibold">Todavía no hay pedidos en el historial</p>
-                <p className="text-xs mt-1">
-                  Acá van a aparecer los pedidos entregados, cancelados y rechazados
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">{historicos.map(renderHistorial)}</div>
-            )}
-          </section>
-        ) : (
-          <>
         {mensaje && (
           <div className={`flex items-start gap-3 p-4 rounded-2xl border ${
             mensaje.tipo === 'error'
@@ -967,43 +1472,207 @@ export default function PedidosSucursal() {
                 : 'bg-emerald-950/40 border-emerald-800/50 text-emerald-300'
           }`}>
             {mensaje.tipo === 'error' ? <AlertCircle size={18} className="shrink-0 mt-0.5" /> : <CheckCircle size={18} className="shrink-0 mt-0.5" />}
-            <p className="text-sm font-semibold">{mensaje.texto}</p>
-          </div>
-        )}
-
-        {avisoPedido && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="flex items-center gap-3 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-cyan-700 dark:text-cyan-300"
-          >
-            <Bell size={18} className="shrink-0" />
-            <p className="flex-1 text-sm font-semibold">{avisoPedido}</p>
+            <p className="flex-1 text-sm font-semibold">{mensaje.texto}</p>
             <button
-              onClick={() => {
-                window.clearTimeout(avisoTimeout.current);
-                setAvisoPedido(null);
-              }}
-              aria-label="Cerrar aviso de pedido"
-              className="rounded-lg p-1 hover:bg-cyan-500/10"
+              type="button"
+              onClick={() => setMensaje(null)}
+              className="shrink-0 rounded-lg p-0.5 opacity-70 transition hover:opacity-100"
+              aria-label="Cerrar mensaje"
             >
-              <X size={16} />
+              <X size={15} />
             </button>
           </div>
         )}
 
+        {vista === 'historial' ? (
+          <section>
+            <div className={`${card} mb-3 rounded-2xl border p-3`}>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className={`flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider ${muted}`}>
+                  Desde
+                  <input
+                    type="date"
+                    value={fechaDesde}
+                    max={fechaHasta || undefined}
+                    onChange={(e) => setFechaDesde(e.target.value)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${input}`}
+                  />
+                </label>
+                <label className={`flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider ${muted}`}>
+                  Hasta
+                  <input
+                    type="date"
+                    value={fechaHasta}
+                    min={fechaDesde || undefined}
+                    onChange={(e) => setFechaHasta(e.target.value)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${input}`}
+                  />
+                </label>
+                {(fechaDesde || fechaHasta) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFechaDesde(''); setFechaHasta(''); }}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${input}`}
+                  >
+                    <X size={13} /> Limpiar
+                  </button>
+                )}
+                <label className={`flex flex-col gap-1 text-[10px] font-bold uppercase tracking-wider ${muted}`}>
+                  Buscar
+                  <div className="relative">
+                    <Search size={13} className={`absolute left-2.5 top-1/2 -translate-y-1/2 ${muted} pointer-events-none`} />
+                    <input
+                      type="search"
+                      value={busquedaHistorial}
+                      onChange={(e) => setBusquedaHistorial(e.target.value)}
+                      placeholder="#pedido, sucursal o estado"
+                      className={`w-52 rounded-lg border pl-7 pr-2.5 py-1.5 text-xs font-semibold ${input}`}
+                    />
+                  </div>
+                </label>
+                <button
+                  type="button"
+                  onClick={exportarHistorialCSV}
+                  className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${input}`}
+                  title="Descargar los pedidos filtrados en CSV"
+                >
+                  <Download size={13} /> CSV
+                </button>
+                <div className="ml-auto flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { setVerArchivados(false); setSeleccionados([]); }}
+                    className={tabClase(!verArchivados)}
+                  >
+                    <History size={14} /> Historial ({historicosFiltrados.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setVerArchivados(true); setSeleccionados([]); }}
+                    className={tabClase(verArchivados)}
+                  >
+                    <Archive size={14} /> Archivados ({archivadosFiltrados.length})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <h2 className={`text-xs font-bold uppercase tracking-wider mb-2.5 ${muted}`}>
+              {verArchivados ? 'Pedidos archivados' : 'Historial de pedidos'} ({listaHistorial.length})
+            </h2>
+
+            {listaHistorial.length > 0 && (
+              <div className={`${card} mb-3 flex flex-wrap items-center gap-2 rounded-2xl border px-3 py-2`}>
+                <label className="flex items-center gap-2 text-xs font-bold">
+                  <input
+                    type="checkbox"
+                    checked={seleccionados.length > 0 && seleccionados.length === listaHistorial.length}
+                    onChange={seleccionarTodos}
+                    className="h-4 w-4 cursor-pointer accent-amber-500"
+                  />
+                  <span className={normal}>Seleccionar todo</span>
+                </label>
+                {seleccionados.length > 0 && (
+                  <>
+                    <span className={`text-xs font-bold ${muted}`}>{seleccionados.length} seleccionado(s)</span>
+                    <div className="ml-auto flex flex-wrap gap-1.5">
+                      {verArchivados ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleArchivarMasivo(false)}
+                            disabled={procesandoMasivo}
+                            className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold disabled:opacity-60 ${input}`}
+                          >
+                            <ArchiveRestore size={13} /> Restaurar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmarEliminarMasivo(true)}
+                            disabled={procesandoMasivo}
+                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-500 transition hover:bg-rose-500/20 disabled:opacity-60"
+                          >
+                            {procesandoMasivo ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} Eliminar
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleArchivarMasivo(true)}
+                          disabled={procesandoMasivo}
+                          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold disabled:opacity-60 ${input}`}
+                        >
+                          {procesandoMasivo ? <Loader2 size={13} className="animate-spin" /> : <Archive size={13} />} Archivar
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={limpiarSeleccion}
+                        disabled={procesandoMasivo}
+                        className={`rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-60 ${muted}`}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {listaHistorial.length === 0 ? (
+              <div className={`${card} border rounded-2xl py-12 text-center ${muted}`}>
+                {verArchivados ? (
+                  <>
+                    <Archive size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-semibold">No hay pedidos archivados</p>
+                    <p className="text-xs mt-1">
+                      Archiva un pedido del historial para sacarlo de la lista principal
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <History size={28} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm font-semibold">
+                      {fechaDesde || fechaHasta
+                        ? 'No hay pedidos en esas fechas'
+                        : 'Todavía no hay pedidos en el historial'}
+                    </p>
+                    <p className="text-xs mt-1">
+                      {fechaDesde || fechaHasta
+                        ? 'Prueba con otro rango de fechas'
+                        : 'Acá van a aparecer los pedidos entregados, cancelados y rechazados'}
+                    </p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {listaHistorial.map((item) => renderHistorial(item, verArchivados))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <>
         {cargando ? (
-          <div className={`flex items-center justify-center gap-2 py-20 ${muted}`}>
-            <Loader2 size={20} className="animate-spin" /> Cargando pedidos...
+          <div className="space-y-4 py-8">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className={`flex gap-4 p-4 border rounded-2xl ${darkMode ? 'border-slate-800' : 'border-gray-200'}`}>
+                <Skeleton className="w-12 h-12 rounded-xl" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="w-1/3 h-4" />
+                  <Skeleton className="w-full h-3" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
               {[
                 { label: 'Pendientes', valor: resumen.pendientes, Icono: ShoppingCart, clases: 'text-amber-500 border-amber-500/25 bg-amber-500/10' },
+                { label: 'Por recibir', valor: resumen.porRecibir, Icono: PackageCheck, clases: 'text-violet-500 border-violet-500/25 bg-violet-500/10' },
                 { label: 'En camino', valor: resumen.enCamino, Icono: Truck, clases: 'text-cyan-500 border-cyan-500/25 bg-cyan-500/10' },
-                { label: 'Entregados', valor: resumen.entregados, Icono: CheckCircle, clases: 'text-emerald-500 border-emerald-500/25 bg-emerald-500/10' },
-                { label: 'Rechazados', valor: resumen.rechazados, Icono: XCircle, clases: 'text-rose-500 border-rose-500/25 bg-rose-500/10' },
+                { label: 'Reportes por vencer', valor: resumen.reportesPendientes, Icono: AlertCircle, clases: 'text-rose-500 border-rose-500/25 bg-rose-500/10' },
               ].map(({ label: etiqueta, valor, Icono, clases }) => (
                 <div key={etiqueta} className={`${card} border rounded-2xl p-3 md:p-4`}>
                   <span className={`inline-flex p-2 rounded-xl border ${clases}`}>
@@ -1014,6 +1683,66 @@ export default function PedidosSucursal() {
                 </div>
               ))}
             </div>
+
+            <div className={`${card} mt-2.5 rounded-2xl border p-4`}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Esta semana</p>
+                  <p className={`mt-0.5 text-sm font-black ${strong}`}>{resumenSemana.rango}</p>
+                  <p className={`text-[11px] ${muted}`}>
+                    {resumenSemana.total === 1 ? '1 pedido' : `${resumenSemana.total} pedidos`} con fecha de entrega en la semana
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${darkMode ? 'border-slate-700 text-slate-400' : 'border-gray-300 text-gray-500'}`}>
+                    Entregados: {resumen.entregados}
+                  </span>
+                  <span className={`rounded-full border px-2 py-1 text-[10px] font-bold ${darkMode ? 'border-slate-700 text-slate-400' : 'border-gray-300 text-gray-500'}`}>
+                    Rechazados: {resumen.rechazados}
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Pedidas', valor: resumenSemana.pedidas, clases: 'text-violet-500 bg-violet-500/10 border-violet-500/20' },
+                  { label: 'Recibidas', valor: resumenSemana.recibidas, clases: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' },
+                  { label: 'Faltantes', valor: resumenSemana.faltantes, clases: 'text-amber-500 bg-amber-500/10 border-amber-500/20' },
+                ].map(({ label: etiqueta, valor, clases }) => (
+                  <div key={etiqueta} className={`rounded-xl border p-2.5 ${clases}`}>
+                    <p className="text-lg font-black tabular-nums">{valor}</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">{etiqueta}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className={`mt-3 h-1.5 overflow-hidden rounded-full ${darkMode ? 'bg-slate-800' : 'bg-gray-200'}`}>
+                <div
+                  className="h-full rounded-full bg-emerald-500 transition-all"
+                  style={{ width: `${resumenSemana.porcentajeRecibido}%` }}
+                />
+              </div>
+              <p className={`mt-1 text-[10px] ${muted}`}>
+                {resumenSemana.porcentajeRecibido}% de las unidades pedidas ya se recibió
+                {resumenSemana.conFaltantes > 0
+                  ? ` · ${resumenSemana.conFaltantes} ${resumenSemana.conFaltantes === 1 ? 'pedido' : 'pedidos'} con faltantes`
+                  : ''}
+              </p>
+            </div>
+
+            {resumen.reportesPendientes > 0 && (
+              <button
+                type="button"
+                onClick={abrirReportesPendientes}
+                className="mt-2.5 flex w-full items-center gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-left text-amber-600 transition hover:bg-amber-500/15 dark:text-amber-400"
+              >
+                <AlertCircle size={16} className="shrink-0" />
+                <span className="flex-1 text-xs font-bold">
+                  Hay {resumen.reportesPendientes} {resumen.reportesPendientes === 1 ? 'reporte de entrega pendiente' : 'reportes de entrega pendientes'} antes de que venza el plazo de 7 días.
+                </span>
+                <span className="text-[11px] font-bold underline">Ver historial</span>
+              </button>
+            )}
 
             {pedidoSeguimiento && (
               <div className={`${card} mt-3 rounded-2xl border p-4`}>
@@ -1068,17 +1797,61 @@ export default function PedidosSucursal() {
             )}
 
             <section>
-              <h2 className={`text-xs font-bold uppercase tracking-wider mb-2.5 ${muted}`}>
-                Pedidos activos ({activos.length})
-              </h2>
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <h2 className={`text-xs font-bold uppercase tracking-wider ${muted}`}>
+                  Pedidos activos ({activos.length})
+                </h2>
+                {activos.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {FILTROS_ACTIVOS.map((filtro) => {
+                      const activa = filtroActivos === filtro.id;
+                      return (
+                        <button
+                          key={filtro.id}
+                          type="button"
+                          onClick={() => setFiltroActivos(filtro.id)}
+                          className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition ${
+                            activa
+                              ? 'bg-purple-500/15 border-purple-500/40 text-purple-500'
+                              : darkMode
+                                ? 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800'
+                                : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
+                          }`}
+                        >
+                          {filtro.label}
+                          <span className={`rounded-md px-1.5 py-0.5 text-[10px] tabular-nums ${
+                            activa
+                              ? 'bg-purple-500/15'
+                              : darkMode ? 'bg-slate-800' : 'bg-gray-200'
+                          }`}>
+                            {conteosActivos[filtro.id]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               {activos.length === 0 ? (
                 <div className={`${card} border rounded-2xl py-12 text-center ${muted}`}>
                   <ShoppingCart size={28} className="mx-auto mb-2 opacity-40" />
                   <p className="text-sm font-semibold">No hay pedidos activos</p>
                   {esSucursal && <p className="text-xs mt-1">El dueño de la sucursal registra los pedidos</p>}
                 </div>
+              ) : activosFiltrados.length === 0 ? (
+                <div className={`${card} border rounded-2xl py-10 text-center ${muted}`}>
+                  <ShoppingCart size={26} className="mx-auto mb-2 opacity-40" />
+                  <p className="text-sm font-semibold">No hay pedidos en “{etiquetaFiltroActivo}”</p>
+                  <button
+                    type="button"
+                    onClick={() => setFiltroActivos('todos')}
+                    className={`mt-3 rounded-xl border px-3.5 py-2 text-xs font-bold transition ${input}`}
+                  >
+                    Ver todos ({activos.length})
+                  </button>
+                </div>
               ) : (
-                <div className="space-y-2.5">{activos.map(renderPedido)}</div>
+                <div className="space-y-2.5">{activosFiltrados.map(renderPedido)}</div>
               )}
             </section>
           </>
@@ -1156,6 +1929,227 @@ export default function PedidosSucursal() {
         </div>
       )}
 
+      {/* Borrar definitivamente un pedido archivado */}
+      {porEliminar && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${card}`}>
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-xl border bg-rose-500/10 text-rose-500 border-rose-500/20 shrink-0">
+                <Trash2 size={17} />
+              </span>
+              <div className="min-w-0">
+                <h3 className={`text-base font-black ${strong}`}>
+                  Eliminar pedido #{porEliminar.id}
+                </h3>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Se borra el pedido, su recepción y su reporte para siempre. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPorEliminar(null)}
+                disabled={eliminando}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-bold transition disabled:opacity-60 ${
+                  darkMode
+                    ? 'border-slate-800 text-slate-400 hover:bg-slate-800'
+                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleEliminarArchivado}
+                disabled={eliminando}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-60"
+              >
+                {eliminando
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : <Trash2 size={16} />}
+                {eliminando ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: reporte de entrega */}
+      {reporteAbierto && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className={`w-full max-w-lg rounded-2xl border p-5 shadow-2xl ${card}`}>
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-xl border bg-purple-500/10 text-purple-500 border-purple-500/20 shrink-0">
+                <FileCheck2 size={17} />
+              </span>
+              <div className="min-w-0">
+                <h3 className={`text-base font-black ${strong}`}>
+                  Reporte de entrega · Pedido #{reporteAbierto.id}
+                </h3>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Marcá el estado del pollo, escribí una observación o adjuntá fotos. El reporte le llega al administrador.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+              {ESTADOS_PRODUCTO.map((opcion) => {
+                const activo = (estadoEntrega[reporteAbierto.id] || '') === opcion.valor;
+                return (
+                  <button
+                    key={opcion.valor}
+                    type="button"
+                    onClick={() => setEstadoEntrega((actuales) => ({
+                      ...actuales,
+                      [reporteAbierto.id]: activo ? '' : opcion.valor,
+                    }))}
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] font-bold border transition ${
+                      activo
+                        ? 'bg-purple-500/15 border-purple-500/40 text-purple-500'
+                        : darkMode
+                          ? 'bg-slate-950/60 border-slate-800 text-slate-300 hover:bg-slate-800'
+                          : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {activo
+                      ? <CheckCircle size={13} className="shrink-0" />
+                      : <span className="h-3 w-3 shrink-0 rounded-full border border-current" />}
+                    {opcion.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <textarea
+              rows={4}
+              maxLength={2000}
+              value={observacionesEntrega[reporteAbierto.id] || ''}
+              onChange={(e) => setObservacionesEntrega((actuales) => ({
+                ...actuales,
+                [reporteAbierto.id]: e.target.value,
+              }))}
+              placeholder="Escribe aquí la observación sobre el pedido recibido"
+              className={`mt-3 w-full rounded-lg border px-3 py-2 text-sm ${input}`}
+            />
+            <FotosObservaciones
+              fotos={fotosEntrega[reporteAbierto.id] || []}
+              onCambio={(fotos) => setFotosEntrega((actuales) => ({ ...actuales, [reporteAbierto.id]: fotos }))}
+              onError={(texto) => setMensaje({ tipo: 'error', texto })}
+              theme={{ borde: bordeInput, texto: label, tenue: muted, hoja: card }}
+            />
+
+            {errorReporte[reporteAbierto.id] && (
+              <p className="mt-2 flex items-start gap-1.5 text-[11px] font-semibold text-red-500">
+                <AlertCircle size={13} className="mt-px shrink-0" />
+                {errorReporte[reporteAbierto.id]}
+              </p>
+            )}
+
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <span className={`text-[10px] ${muted}`}>
+                {(observacionesEntrega[reporteAbierto.id] || '').length}/2000
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setReporteAbierto(null)}
+                  disabled={enviandoObservacionPedido === reporteAbierto.id}
+                  className={`rounded-xl border px-4 py-2.5 text-sm font-bold transition disabled:opacity-60 ${
+                    darkMode
+                      ? 'border-slate-800 text-slate-400 hover:bg-slate-800'
+                      : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await handleEnviarObservacionesEntrega(reporteAbierto);
+                    if (ok) setReporteAbierto(null);
+                  }}
+                  disabled={enviandoObservacionPedido === reporteAbierto.id}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700 disabled:opacity-60"
+                >
+                  {enviandoObservacionPedido === reporteAbierto.id
+                    ? <Loader2 size={16} className="animate-spin" />
+                    : <FileCheck2 size={16} />}
+                  {enviandoObservacionPedido === reporteAbierto.id ? 'Enviando...' : 'Enviar reporte'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: eliminar seleccionados (masivo) */}
+      {confirmarEliminarMasivo && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${card}`}>
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-xl border bg-rose-500/10 text-rose-500 border-rose-500/20 shrink-0">
+                <Trash2 size={17} />
+              </span>
+              <div className="min-w-0">
+                <h3 className={`text-base font-black ${strong}`}>
+                  Eliminar {seleccionados.length} pedido(s)
+                </h3>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Se borran los pedidos seleccionados, su recepción y su reporte para siempre. Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmarEliminarMasivo(false)}
+                disabled={procesandoMasivo}
+                className={`flex-1 rounded-xl border px-4 py-2.5 text-sm font-bold transition disabled:opacity-60 ${
+                  darkMode
+                    ? 'border-slate-800 text-slate-400 hover:bg-slate-800'
+                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleEliminarMasivo}
+                disabled={procesandoMasivo}
+                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-rose-700 disabled:opacity-60"
+              >
+                {procesandoMasivo
+                  ? <Loader2 size={16} className="animate-spin" />
+                  : <Trash2 size={16} />}
+                {procesandoMasivo ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ModalConfirmar
+        config={pedidoAConfirmar ? {
+          titulo: `Cancelar pedido #${pedidoAConfirmar.id}`,
+          mensaje: 'El pedido se va a cancelar y no se puede recuperar. Por favor, escribí el motivo:',
+          labelConfirmar: 'Cancelar pedido',
+          variante: 'danger',
+          onConfirmar: () => handleCancelar(pedidoAConfirmar.id, motivoRechazo),
+          inputMotivo: {
+            value: motivoRechazo,
+            onChange: (e) => setMotivoRechazo(e.target.value),
+            placeholder: 'Motivo de la cancelación...',
+          }
+        } : null}
+        onCerrar={() => {
+          if (!enviandoRechazo) setPedidoAConfirmar(null);
+        }}
+        cargando={enviandoRechazo}
+      />
+
       {/* Visor de evidencia */}
       {viendoEvidencia && (
         <div
@@ -1166,6 +2160,7 @@ export default function PedidosSucursal() {
           <img
             src={viendoEvidencia.url}
             alt={viendoEvidencia.tipo}
+            onClick={(evento) => evento.stopPropagation()}
             className="max-w-full max-h-[80vh] rounded-xl object-contain shadow-2xl"
           />
           <button className="mt-5 px-5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-bold">

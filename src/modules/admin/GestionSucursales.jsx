@@ -4,6 +4,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { sucursalesRepository } from '../../repositories/sucursalesRepository';
 import { authRepository } from '../../repositories/AuthRepository';
 import MapaUbicacion from '../../components/MapaUbicacion';
+import ModalConfirmar from '../../components/ModalConfirmar';
 import {
   LogOut, Sun, Moon, Plus, Pencil, Trash2, X,
   Search, ArrowLeft, CheckCircle, AlertCircle, MapPin, Loader2, Route, ExternalLink
@@ -18,7 +19,7 @@ const SECTOR_COLOR = {
   PARTICULAR: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
 };
 
-const EMPTY_FORM = { nombre: '', sector: '', ubicacion: null, enlaceMapa: '' };
+const EMPTY_FORM = { nombre: '', sector: '', ubicacion: null, enlaceMapa: '', stock_minimo: 0 };
 
 export default function GestionSucursales() {
   const { darkMode, toggleTheme } = useTheme();
@@ -35,6 +36,8 @@ export default function GestionSucursales() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editandoId, setEditandoId] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  const [confirmar, setConfirmar] = useState(null);
+  const [procesandoConfirm, setProcesandoConfirm] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -91,14 +94,15 @@ export default function GestionSucursales() {
   };
 
   const abrirEditar = (s) => {
-    setForm({
-      nombre: s.nombre,
-      sector: s.sector,
-      ubicacion: s.latitude != null && s.longitude != null
-        ? { lat: Number(s.latitude), longitude: Number(s.longitude) }
-        : null,
-      enlaceMapa: s.map_url || '',
-    });
+      setForm({
+        nombre: s.nombre,
+        sector: s.sector,
+        ubicacion: s.latitude != null && s.longitude != null
+          ? { lat: Number(s.latitude), longitude: Number(s.longitude) }
+          : null,
+        enlaceMapa: s.map_url || '',
+        stock_minimo: s.stock_minimo || 0,
+      });
     setEditandoId(s.id);
     setModal('editar');
   };
@@ -150,6 +154,7 @@ export default function GestionSucursales() {
           latitude: form.ubicacion?.lat ?? null,
           longitude: form.ubicacion?.longitude ?? null,
           map_url: enlaceMapa || null,
+          stock_minimo: parseInt(form.stock_minimo) || 0,
         });
         setMensaje({ tipo: 'exito', texto: `Sucursal "${nombre}" actualizada` });
       } else {
@@ -159,6 +164,7 @@ export default function GestionSucursales() {
           latitude: form.ubicacion?.lat ?? null,
           longitude: form.ubicacion?.longitude ?? null,
           map_url: enlaceMapa || null,
+          stock_minimo: parseInt(form.stock_minimo) || 0,
         });
         setMensaje({ tipo: 'exito', texto: `Sucursal "${nombre}" agregada en la zona ${form.sector}` });
       }
@@ -174,57 +180,44 @@ export default function GestionSucursales() {
   const handleEliminar = async (s) => {
     try {
       const usos = await sucursalesRepository.contarUsos(s.id);
-
-      // Se cuentan pedidos tambien, no solo despachos. Una sucursal
-      // con pedidos tiene ON DELETE RESTRICT y no se puede borrar,
-      // aunque no tenga despachos.
       const partes = [];
       if (usos.despachos > 0) partes.push(`${usos.despachos} despacho(s)`);
       if (usos.pedidos > 0) partes.push(`${usos.pedidos} pedido(s)`);
       if (usos.usuarios > 0) partes.push(`${usos.usuarios} usuario(s)`);
 
       if (partes.length > 0) {
-        const listado =
-          partes.length === 1
-            ? partes[0]
-            : partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1];
-
-        setMensaje({
-          tipo: 'error',
-          texto:
-            `No se puede eliminar "${s.nombre}": tiene ${listado}. ` +
-            `Borrarla rompería el historial de esos registros. ` +
-            `Si la sucursal dejó de operar, conviene dejarla y no borrarla.`,
-        });
+        const listado = partes.length === 1 ? partes[0] : partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1];
+        setMensaje({ tipo: 'error', texto: `No se puede eliminar "${s.nombre}": tiene ${listado}. Borrarla rompería el historial.` });
         return;
       }
 
-      const confirmado = window.confirm(`¿Eliminar la sucursal "${s.nombre}" de la zona ${s.sector}?`);
-      if (!confirmado) return;
-
-      await sucursalesRepository.eliminar(s.id);
-      setMensaje({ tipo: 'exito', texto: `Sucursal "${s.nombre}" eliminada` });
-      await cargarDatos();
+      setConfirmar({
+        titulo: `Eliminar "${s.nombre}"`,
+        mensaje: `Se va a eliminar la sucursal de la zona ${s.sector}. Esta acción no se puede deshacer.`,
+        labelConfirmar: 'Eliminar sucursal',
+        variante: 'danger',
+        onConfirmar: async () => {
+          try {
+            setProcesandoConfirm(true);
+            await sucursalesRepository.eliminar(s.id);
+            setMensaje({ tipo: 'exito', texto: `Sucursal "${s.nombre}" eliminada` });
+            await cargarDatos();
+          } catch (err) {
+            const violoFk = err?.code === '23503' || (err?.message || '').includes('foreign key constraint');
+            setMensaje({
+              tipo: 'error',
+              texto: violoFk
+                ? `No se puede eliminar "${s.nombre}" porque tiene registros asociados.`
+                : (err.message || 'No se pudo eliminar'),
+            });
+          } finally {
+            setProcesandoConfirm(false);
+            setConfirmar(null);
+          }
+        },
+      });
     } catch (err) {
-      // Red de seguridad: si el conteo se quedaron corto por
-      // algo, Postgres igual va a rechazar el borrado. 23503 es
-      // "violates foreign key constraint". Se traduce para que no
-      // aparezca el error crudo de la base.
-      const violoFk =
-        err?.code === '23503' ||
-        (err?.message || '').includes('foreign key constraint');
-
-      if (violoFk) {
-        setMensaje({
-          tipo: 'error',
-          texto:
-            `No se puede eliminar "${s.nombre}" porque tiene registros ` +
-            `asociados (pedidos o despachos) y borrarla rompería el historial.`,
-        });
-        return;
-      }
-
-      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar la sucursal' });
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo verificar los usos' });
     }
   };
 
@@ -507,6 +500,23 @@ export default function GestionSucursales() {
               </div>
 
               <div>
+                <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
+                  Stock Mínimo (Alerta)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.stock_minimo}
+                  onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
+                  placeholder="Ej. 50"
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none transition ${input}`}
+                />
+                <p className={`mt-1.5 text-[11px] ${muted}`}>
+                  Cantidad mínima de unidades. Si el stock baja de esta cantidad, el dueño recibirá una alerta visual.
+                </p>
+              </div>
+
+              <div>
                 <label className={`mb-2 block text-xs font-semibold uppercase tracking-wider ${label}`}>
                   Ubicación de la sucursal
                 </label>
@@ -551,6 +561,12 @@ export default function GestionSucursales() {
           </div>
         </div>
       )}
+
+      <ModalConfirmar
+        config={confirmar}
+        onCerrar={() => { if (!procesandoConfirm) setConfirmar(null); }}
+        cargando={procesandoConfirm}
+      />
     </div>
   );
 }

@@ -52,6 +52,13 @@ export default function GestionRutas() {
     };
   }, [cargar]);
 
+  // Auto-cierre del mensaje de éxito a los 5 segundos.
+  useEffect(() => {
+    if (mensaje?.tipo !== 'ok') return;
+    const t = setTimeout(() => setMensaje(null), 5000);
+    return () => clearTimeout(t);
+  }, [mensaje]);
+
   const cargarDatos = async () => {
     const datos = await cargar();
     setRutas(datos.rutas);

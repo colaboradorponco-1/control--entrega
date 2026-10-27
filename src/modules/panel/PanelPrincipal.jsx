@@ -54,9 +54,9 @@ const PANELES_POR_ROL = {
   },
   sucursal: {
     titulo: 'Panel de Sucursal',
-    responsabilidad: 'Solicita pedidos para su sucursal, revisa el avance y confirma la recepción de las entregas.',
+    responsabilidad: 'Consulta el avance de los pedidos de su sucursal, confirma la recepción de las entregas y reporta novedades.',
     accesos: [
-      { titulo: 'Pedidos y entregas', detalle: 'Solicita pedidos, sigue su avance y confirma las recepciones.', ruta: '/sucursal', icono: ShoppingCart },
+      { titulo: 'Pedidos y entregas', detalle: 'Sigue el avance de los pedidos, confirma las recepciones y reporta novedades.', ruta: '/sucursal', icono: ShoppingCart },
     ],
   },
   dueno: {

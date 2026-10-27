@@ -47,6 +47,13 @@ export function useAvisos() {
     cargar();
   }, [cargar]);
 
+  // Respaldo por si el realtime no esta habilitado o se cae la
+  // conexion: igual se refresca cada 25 segundos.
+  useEffect(() => {
+    const intervalo = setInterval(() => cargar({ silencioso: true }), 25000);
+    return () => clearInterval(intervalo);
+  }, [cargar]);
+
   // El aviso llega solo, sin recargar la pagina.
   useEffect(() => {
     if (!usuario?.id) return undefined;
@@ -56,7 +63,7 @@ export function useAvisos() {
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'notificaciones',
           filter: `destinatario_usuario_id=eq.${usuario.id}`,

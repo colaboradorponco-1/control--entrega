@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ImageIcon, Package, PackageX } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ImageIcon, Package, PackageCheck, PackageX, Truck } from 'lucide-react';
 
 export const ETIQUETA_ESTADO_PRODUCTO = {
   FRESCO: 'Fresco y refrigerado',
@@ -18,6 +18,21 @@ const TIPOS = {
     texto: 'Faltantes en la recepción',
     clase: 'bg-red-500/15 text-red-500 border-red-500/30',
     icono: PackageX,
+  },
+  PEDIDO_APROBADO: {
+    texto: 'Pedido aprobado',
+    clase: 'bg-violet-500/15 text-violet-500 border-violet-500/30',
+    icono: CheckCircle2,
+  },
+  PEDIDO_LISTO: {
+    texto: 'Pedido listo',
+    clase: 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30',
+    icono: PackageCheck,
+  },
+  PEDIDO_EN_CAMINO: {
+    texto: 'Pedido en camino',
+    clase: 'bg-cyan-500/15 text-cyan-500 border-cyan-500/30',
+    icono: Truck,
   },
 };
 

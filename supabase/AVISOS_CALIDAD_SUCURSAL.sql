@@ -1,34 +1,3 @@
--- ============================================================
---  AVISOS DE CALIDAD DE LAS SUCURSALES
--- ------------------------------------------------------------
---  El administrador tiene que enterarse de dos cosas:
---
---    1) Cuando la sucursal recibe el pedido con FALTANTES.
---       Antes ese dato se quedaba en la sucursal y el admin
---       no se enteraba de la perdida de mercaderia.
---    2) El reporte de entrega con el estado del pollo (ya
---       existe, en REPORTE_ENTREGA_ADMIN.sql).
---
---  Este archivo:
---    1) Agrega las columnas de calidad a public.notificaciones
---    2) Vuelve a crear confirmar_recepcion_pedido con la misma
---       firma (9 parametros) pero ademas deja el aviso cuando
---       hay faltantes o unidades de mas
---
---  El aviso lo reciben solo los usuarios con rol 'administrador'.
---  El superadmin queda fuera (ver REPORTE_ENTREGA_ADMIN.sql).
---
---  Requiere:
---    - public.verificar_archivo(...)      (ARREGLAR_HELPERS_EVIDENCIA.sql)
---    - public.validar_fotos_extra(...)    (ARREGLAR_HELPERS_EVIDENCIA.sql)
---    - tabla public.notificaciones        (REPORTE_ENTREGA_ADMIN.sql)
---
---  Ejecutar en Supabase > SQL Editor. Es seguro correrlo dos veces.
--- ============================================================
-
--- ------------------------------------------------------------
--- 1) Columnas de calidad en los avisos
--- ------------------------------------------------------------
 ALTER TABLE public.notificaciones
   ADD COLUMN IF NOT EXISTS unidades_pedidas INT,
   ADD COLUMN IF NOT EXISTS unidades_recibidas INT,
@@ -39,26 +8,11 @@ ALTER TABLE public.notificaciones
   ADD COLUMN IF NOT EXISTS firma_url TEXT,
   ADD COLUMN IF NOT EXISTS fotos_extra TEXT[] NOT NULL DEFAULT '{}';
 
--- ------------------------------------------------------------
--- 2) La RPC de recepcion: misma firma, ahora tambien avisa
--- ------------------------------------------------------------
--- Se borran TODAS las versiones de la RPC por su OID (no por
--- firma): si queda una con otro tipo de retorno, el CREATE de abajo
--- falla con "cannot change return type of existing function".
-DO $$
-DECLARE
-  v_oid OID;
-BEGIN
-  FOR v_oid IN
-    SELECT p.oid
-      FROM pg_proc p
-      JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = 'public'
-       AND p.proname = 'confirmar_recepcion_pedido'
-  LOOP
-    EXECUTE format('DROP FUNCTION IF EXISTS %s CASCADE', v_oid::regprocedure);
-  END LOOP;
-END $$;
+DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT);
+DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT, TEXT);
+DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, NUMERIC, TEXT);
+DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC);
+DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, TEXT[]);
 
 CREATE OR REPLACE FUNCTION public.confirmar_recepcion_pedido(
   p_pedido_id INT,
@@ -111,9 +65,6 @@ BEGIN
     RAISE EXCEPTION 'Perfil no encontrado';
   END IF;
 
-  -- IS DISTINCT FROM y no <>: con rol NULL (usuario sin perfil o
-  -- llamada sin sesion) la comparacion da NULL y el IF no se
-  -- dispara, dejando pasar a cualquiera.
   IF public.get_user_rol() IS DISTINCT FROM 'administrador'
      AND v_pedido_sucursal IS DISTINCT FROM v_perfil_sucursal THEN
     RAISE EXCEPTION 'No tenes permiso para recibir este pedido';
@@ -144,8 +95,6 @@ BEGIN
 
   v_faltantes := p_unidades_recibidas < v_pedido_unidades;
 
-  -- La carga que ya existe queda como recibida. No se inserta otra
-  -- fila, porque el inventario sumaria los kilos dos veces.
   UPDATE public.despacho_pollo
      SET estado_recepcion = 'RECIBIDO'
    WHERE pedido_id = p_pedido_id;
@@ -172,10 +121,6 @@ BEGIN
 
   UPDATE public.pedidos SET estado = 'ENTREGADO' WHERE id = p_pedido_id;
 
-  -- ------------------------------------------------------------
-  -- Aviso al administrador: solo si hay faltantes o unidades de
-  -- mas. Una recepcion completa no genera ruido.
-  -- ------------------------------------------------------------
   v_faltantes_n := GREATEST(v_pedido_unidades - p_unidades_recibidas, 0);
   v_sobran_n := GREATEST(p_unidades_recibidas - v_pedido_unidades, 0);
   v_hay_que_avisar := v_faltantes_n > 0 OR v_sobran_n > 0;
@@ -243,7 +188,6 @@ GRANT EXECUTE ON FUNCTION public.confirmar_recepcion_pedido(
 
 NOTIFY pgrst, 'reload schema';
 
--- Verificacion: una sola version de 9 argumentos
 SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS argumentos
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace

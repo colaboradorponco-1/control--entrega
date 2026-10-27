@@ -1,25 +1,37 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Login from '../modules/auth/Login';
 import ProtectedRoute from '../components/ProtectedRoute';
-import RecepcionPollo from '../modules/planta/RecepcionPollo';
-import DashboardAdmin from '../modules/admin/DashboardAdmin';
-import GestionUsuarios from '../modules/admin/GestionUsuarios';
-import GestionSucursales from '../modules/admin/GestionSucursales';
-import PedidosSucursal from '../modules/sucursal/PedidosSucursal';
-import PedidosPlanta from '../modules/planta/PedidosPlanta';
-import PedidosDespachador from '../modules/despacho/PedidosDespachador';
-import MisSucursalesDueno from '../modules/dueno/MisSucursalesDueno';
-import GestionDuenos from '../modules/admin/GestionDuenos';
-import GestionRutas from '../modules/admin/GestionRutas';
-import BandejaAvisos from '../modules/admin/BandejaAvisos';
-import RecuperarContrasena from '../modules/auth/RecuperarContrasena';
-import NuevaContrasena from '../modules/auth/NuevaContrasena';
-import PanelPrincipal from '../modules/panel/PanelPrincipal';
-import PlanillaSemanal from '../modules/superadmin/PlanillaSemanal';
+
+const Login = lazy(() => import('../modules/auth/Login'));
+const RecepcionPollo = lazy(() => import('../modules/planta/RecepcionPollo'));
+const DashboardAdmin = lazy(() => import('../modules/admin/DashboardAdmin'));
+const GestionUsuarios = lazy(() => import('../modules/admin/GestionUsuarios'));
+const GestionSucursales = lazy(() => import('../modules/admin/GestionSucursales'));
+const PedidosSucursal = lazy(() => import('../modules/sucursal/PedidosSucursal'));
+const BandejaAvisosSucursal = lazy(() => import('../modules/sucursal/BandejaAvisosSucursal'));
+const PedidosPlanta = lazy(() => import('../modules/planta/PedidosPlanta'));
+const PedidosDespachador = lazy(() => import('../modules/despacho/PedidosDespachador'));
+const MisSucursalesDueno = lazy(() => import('../modules/dueno/MisSucursalesDueno'));
+const GestionDuenos = lazy(() => import('../modules/admin/GestionDuenos'));
+const GestionRutas = lazy(() => import('../modules/admin/GestionRutas'));
+const BandejaAvisos = lazy(() => import('../modules/admin/BandejaAvisos'));
+const RecuperarContrasena = lazy(() => import('../modules/auth/RecuperarContrasena'));
+const NuevaContrasena = lazy(() => import('../modules/auth/NuevaContrasena'));
+const PanelPrincipal = lazy(() => import('../modules/panel/PanelPrincipal'));
+const RegistroActividad = lazy(() => import('../modules/admin/RegistroActividad'));
+
+function CargandoRuta() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
+      <div className="animate-pulse text-sm font-semibold">Cargando...</div>
+    </div>
+  );
+}
 
 export default function AppRouter() {
   return (
     <BrowserRouter>
+      <Suspense fallback={<CargandoRuta />}>
       <Routes>
         <Route path="/login" element={<Login />} />
 
@@ -67,6 +79,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute rolesPermitidos={['sucursal', 'administrador']}>
               <PedidosSucursal />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sucursal/avisos"
+          element={
+            <ProtectedRoute rolesPermitidos={['sucursal']}>
+              <BandejaAvisosSucursal />
             </ProtectedRoute>
           }
         />
@@ -146,6 +166,15 @@ export default function AppRouter() {
         />
 
         <Route
+          path="/auditoria"
+          element={
+            <ProtectedRoute rolesPermitidos={['administrador']}>
+              <RegistroActividad />
+            </ProtectedRoute>
+          }
+        />
+        
+        <Route
           path="/planilla"
           element={
             <ProtectedRoute rolesPermitidos={['superadmin']}>
@@ -156,6 +185,7 @@ export default function AppRouter() {
 
         <Route path="*" element={<Navigate to="/panel" replace />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

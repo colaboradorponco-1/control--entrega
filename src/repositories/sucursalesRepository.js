@@ -4,7 +4,7 @@ export const sucursalesRepository = {
   async listar() {
     const { data, error } = await supabase
       .from('sucursales')
-      .select('id, nombre, sector, latitude, longitude, map_url')
+      .select('id, nombre, sector, latitude, longitude, map_url, stock_minimo')
       .order('sector', { ascending: true })
       .order('nombre', { ascending: true });
 
@@ -23,17 +23,6 @@ export const sucursalesRepository = {
     return [...new Set((data || []).map((s) => s.sector).filter(Boolean))];
   },
 
-  // Verificar si una sucursal ya esta en uso (evita perder historial)
-  //
-  // OJO: hay que contar PEDIDOS tambien. public.pedidos.sucursal_id
-  // esta con ON DELETE RESTRICT, asi que una sucursal con pedidos no
-  // se puede borrar aunque no tenga despachos. Antes no se contaba y
-  // el chequeo pasaba, y despues Postgres rechazaba el borrado con un
-  // error de foreign key crudo que no explicaba nada.
-  //
-  // Las otras tablas si se borran en cascada o se vacian solas:
-  //   sucursal_duenos  ON DELETE CASCADE
-  //   perfiles_usuario ON DELETE SET NULL  (y el usuario es de baja)
   async contarUsos(id) {
     const [despachos, pedidos, perfiles] = await Promise.all([
       supabase
@@ -61,10 +50,10 @@ export const sucursalesRepository = {
     };
   },
 
-  async crear({ nombre, sector, latitude, longitude, map_url }) {
+  async crear({ nombre, sector, latitude, longitude, map_url, stock_minimo }) {
     const { data, error } = await supabase
       .from('sucursales')
-      .insert([{ nombre, sector, latitude, longitude, map_url }])
+      .insert([{ nombre, sector, latitude, longitude, map_url, stock_minimo }])
       .select()
       .single();
 
@@ -72,10 +61,10 @@ export const sucursalesRepository = {
     return data;
   },
 
-  async actualizar(id, { nombre, sector, latitude, longitude, map_url }) {
+  async actualizar(id, { nombre, sector, latitude, longitude, map_url, stock_minimo }) {
     const { data, error } = await supabase
       .from('sucursales')
-      .update({ nombre, sector, latitude, longitude, map_url })
+      .update({ nombre, sector, latitude, longitude, map_url, stock_minimo })
       .eq('id', id)
       .select()
       .single();

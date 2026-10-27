@@ -87,8 +87,8 @@ export default function FormularioRecepcion({
           </p>
         )}
         {excede && (
-          <p className="mt-1 text-[11px] font-bold text-amber-500">
-            Recibiste más de lo pedido ({pedido.unidades}). Verificá el número.
+          <p className="mt-1 text-[11px] font-bold text-red-500">
+            No puedes recibir más de {pedido.unidades} unidades. Corregí el número para poder confirmar.
           </p>
         )}
       </div>
@@ -166,7 +166,7 @@ export default function FormularioRecepcion({
         </button>
         <button
           type="submit"
-          disabled={enviando || faltaObservacion}
+          disabled={enviando || faltaObservacion || excede}
           className="flex-1 flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 text-white px-3 py-2.5 rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-500/20"
         >
           {enviando ? <Loader2 size={15} className="animate-spin" /> : <FileCheck2 size={15} />}

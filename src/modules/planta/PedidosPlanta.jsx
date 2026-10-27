@@ -1,3 +1,26 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import PedidosOperacion from '../../components/PedidosOperacion';
 import { PackageCheck, Flame } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -23,7 +46,7 @@ export default function PedidosPlanta() {
   const { perfil } = useAuth();
   // Solo la planta mueve estos estados. El admin entra a mirar: si
   // viera los botones, la base se los rechazaria igual.
-  const esOperadorPlanta = perfil?.roles?.nombre === 'operador_planta';
+  const esOperadorPlanta = ['operador_planta', 'administrador'].includes(perfil?.roles?.nombre || '');
 
   return (
     <PedidosOperacion
