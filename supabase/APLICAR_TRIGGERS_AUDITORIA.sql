@@ -1,8 +1,3 @@
--- ============================================================
--- APLICAR TRIGGERS DE AUDITORIA
--- ------------------------------------------------------------
--- Aplica el trigger registrar_auditoria a las tablas criticas.
--- ============================================================
 
 DROP TRIGGER IF EXISTS trg_auditoria_pedidos ON public.pedidos;
 CREATE TRIGGER trg_auditoria_pedidos AFTER INSERT OR UPDATE OR DELETE ON public.pedidos FOR EACH ROW EXECUTE FUNCTION public.registrar_auditoria();

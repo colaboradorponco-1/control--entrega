@@ -157,7 +157,6 @@ export default function DashboardAdmin() {
   }, [despachos, filtroFecha, filtroSucursalDespacho, busquedaDespacho]);
 
   const muted = darkMode ? 'text-slate-400' : 'text-gray-500';
-  const normal = darkMode ? 'text-slate-300' : 'text-gray-700';
 
   const sucursalesDespacho = useMemo(
     () => [...new Set(despachos.map((d) => d.sucursales?.nombre).filter(Boolean))].sort(),

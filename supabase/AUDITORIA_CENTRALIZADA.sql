@@ -1,15 +1,10 @@
--- ============================================================
--- AUDITORIA CENTRALIZADA
--- ------------------------------------------------------------
--- Crea la tabla de auditoria unica y una funcion de trigger
--- generica para registrar cambios en cualquier tabla.
--- ============================================================
+
 
 CREATE TABLE IF NOT EXISTS public.auditoria (
   id BIGSERIAL PRIMARY KEY,
   tabla TEXT NOT NULL,
   registro_id INT NOT NULL,
-  accion TEXT NOT NULL, -- INSERT, UPDATE, DELETE
+  accion TEXT NOT NULL, 
   datos_old JSONB,
   datos_new JSONB,
   usuario_id UUID REFERENCES auth.users(id),

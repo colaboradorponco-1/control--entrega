@@ -17,7 +17,7 @@ export default function GraficoSucursales({ data, darkMode }) {
         />
         <Bar dataKey="kilos" fill="#f59e0b" radius={[0, 4, 4, 0]}>
           {data.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#f59e0b' : '#d97706'} />
+            <Cell key={entry.nombre ?? `cell-${index}`} fill={index % 2 === 0 ? '#f59e0b' : '#d97706'} />
           ))}
         </Bar>
       </BarChart>

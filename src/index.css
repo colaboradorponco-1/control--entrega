@@ -1,3 +1,26 @@
+@import "tailwindcss";
+
+/* El tema se cambia con la clase .dark en <html>, no con el
+   sistema operativo. Esto hace que dark:* siga el toggle. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 usa currentColor por defecto en los bordes; el
+   proyecto se diseñó con el gris claro de Tailwind v3. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
+
 html {
   background-color: #f3f4f6;
 }

@@ -1,6 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../config/supabaseClient';
-import { authRepository } from '../repositories/AuthRepository';
+import {
+  authRepository,
+  consumirLogoutSolicitado,
+  limpiarLogoutSolicitado,
+} from '../repositories/AuthRepository';
 
 const AuthContext = createContext();
 
@@ -8,7 +12,9 @@ export const AuthProvider = ({ children }) => {
   const [usuario, setUsuario] = useState(null);
   const [perfil, setPerfil] = useState(null);
   const [cargando, setCargando] = useState(true);
+  const [perfilError, setPerfilError] = useState(null);
   const [sesionExpirada, setSesionExpirada] = useState(false);
+  const habiaUsuarioRef = useRef(false);
 
   useEffect(() => {
     // Este efecto solo sigue la sesion. El perfil se pide aparte, en
@@ -16,19 +22,27 @@ export const AuthProvider = ({ children }) => {
     // auth mientras el cliente tiene bloqueado el almacenamiento.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setUsuario(session?.user ?? null);
-      if (!session?.user) {
-        setPerfil(null);
-        setCargando(false);
-      }
-      // TOKEN_EXPIRED llega cuando el refresh falla (sin conexión, token
-      // revocado). En vez de dejar al usuario con errores misteriosos,
-      // redirigimos al login con un aviso claro.
-      if (event === 'TOKEN_REFRESHED') {
+
+      // Con sesion activa (login nuevo, token renovado) la sesion deja
+      // de estar expirada. Sin esto, despues de un "Salir" la marca
+      // quedaba encendida para siempre y cada login rebotaba al inicio.
+      if (session?.user) {
+        habiaUsuarioRef.current = true;
+        limpiarLogoutSolicitado();
         setSesionExpirada(false);
+        return;
       }
-      if (event === 'SIGNED_OUT' && !session) {
-        // Puede ser logout normal o expiración. El estado sesionExpirada
-        // se pone solo si fue una expiración real (sin acción del usuario).
+
+      setPerfil(null);
+      setPerfilError(null);
+      setCargando(false);
+
+      // Solo es una expiracion si habia una sesion y el usuario no
+      // apreto "Salir".
+      if (event === 'SIGNED_OUT') {
+        const logoutManual = consumirLogoutSolicitado();
+        setSesionExpirada(!logoutManual && habiaUsuarioRef.current);
+        habiaUsuarioRef.current = false;
       }
     });
 
@@ -54,6 +68,7 @@ export const AuthProvider = ({ children }) => {
 
     let activa = true;
     setPerfil(null);
+    setPerfilError(null);
     setCargando(true);
 
     authRepository
@@ -63,7 +78,10 @@ export const AuthProvider = ({ children }) => {
       })
       .catch((err) => {
         console.error('Error al obtener perfil:', err);
-        if (activa) setPerfil(null);
+        if (activa) {
+          setPerfil(null);
+          setPerfilError(err.message || 'No se pudo cargar el perfil');
+        }
       })
       .finally(() => {
         if (activa) setCargando(false);
@@ -73,8 +91,8 @@ export const AuthProvider = ({ children }) => {
   }, [usuarioId]);
 
   const valor = useMemo(
-    () => ({ usuario, perfil, cargando, recargarPerfil, sesionExpirada, setSesionExpirada }),
-    [usuario, perfil, cargando, recargarPerfil, sesionExpirada]
+    () => ({ usuario, perfil, perfilError, cargando, recargarPerfil, sesionExpirada, setSesionExpirada }),
+    [usuario, perfil, perfilError, cargando, recargarPerfil, sesionExpirada]
   );
 
   return (

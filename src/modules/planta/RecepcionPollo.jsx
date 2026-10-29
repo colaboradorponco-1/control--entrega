@@ -19,13 +19,10 @@ export default function RecepcionPollo() {
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
-  // NUEVO: Estados para la nueva función de recepción
-  const [pedidosDisponibles, setPedidosDisponibles] = useState([]);
-  const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
+  // Estados del formulario de recepción
   const [unidades, setUnidades] = useState('');
   const [kilos, setKilos] = useState(''); // AGREGADO: Estado original de kilos
   const [kilosCalculados, setKilosCalculados] = useState(0);
-  const [faltantes, setFaltantes] = useState(false);
 
   const [proveedorId, setProveedorId] = useState('');
   const [numeroRecibo, setNumeroRecibo] = useState('');
@@ -121,51 +118,32 @@ useEffect(() => {
 
     setMensaje(null);
 
+    setCargando(true);
+
     try {
-      // Llamar a la función registrar_recepcion_completa en Supabase
-      const { data, error } = await supabase
-        .rpc('public.registrar_recepcion_completa', {
-          p_pedido_id: pedidoSeleccionado?.id,
-          p_unidades_recibidas: parseInt(unidades) || 0,
-          p_observaciones: observaciones || null
-        });
+      await recepcionRepository.registrarLote({
+        proveedor_id: proveedorId,
+        numero_recibo: numeroRecibo,
+        kilos,
+        unidades,
+        precio_por_kilo: precioPorKilo,
+        observaciones,
+        entregado_por: entregadoPor,
+        recibido_por: recibidoPor,
+        fotosExtra,
+        foto,
+        firmaEntrega: evidenciasRepository.dataUrlABlob(firmaEntrega),
+        firmaRecepcion: evidenciasRepository.dataUrlABlob(firmaRecepcion),
+        ubicacion,
+      });
 
-      if (error) {
-        console.error('Error en la función RPC:', error);
-        setMensaje({ tipo: 'error', texto: 'Error al registrar recepción: ' + error.message });
-        return;
-      }
-
-      // data viene con: exito, mensaje, recepcion_id, saldo_actual, faltantes
-      if (data && data.exito) {
-        // Mostrar mensaje de éxito con información del saldo
-        setMensaje({
-          tipo: 'ok',
-          texto: data.mensaje + '. Saldo actual: ' + (data.saldo_actual ? data.saldo_actual.toFixed(2) : '0') + ' kg. Faltantes: ' + (data.faltantes ? 'Sí' : 'No')
-        });
-
-        // Actualizar el kilos calculados basados en el nuevo saldo
-        setKilosCalculados(data.saldo_actual || 0);
-
-        // Resetear formulario después de un momento
-        setTimeout(() => {
-          limpiarFormulario();
-        }, 3000);
-
-        // Actualizar historial
-        try {
-          const listHistorial = await recepcionRepository.obtenerRecepcionesDelDia();
-          setHistorial(listHistorial);
-        } catch (err) {
-          // Ignorar errores al actualizar historial
-        }
-      } else {
-        // Error al registrar
-        setMensaje({ tipo: 'error', texto: data?.mensaje || 'Error desconocido al registrar recepción' });
-      }
+      setMensaje({ tipo: 'exito', texto: 'Lote registrado con foto y las dos firmas' });
+      limpiarFormulario();
+      cargarDatos();
     } catch (err) {
-      console.error('Excepción al registrar recepción:', err);
-      setMensaje({ tipo: 'error', texto: 'Error inesperado al procesar la recepción' });
+      setMensaje({ tipo: 'error', texto: err.message || 'Error al guardar el registro' });
+    } finally {
+      setCargando(false);
     }
   };
 

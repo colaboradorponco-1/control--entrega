@@ -36,7 +36,13 @@ export default function ModalConfirmar({
     labelConfirmar = 'Confirmar',
     variante = 'danger',   // 'danger' | 'warning' | 'default'
     onConfirmar,
+    inputMotivo,
   } = config;
+
+  // Un motivo con longitud mínima bloquea el botón de confirmar.
+  const motivoCorto = Boolean(inputMotivo)
+    && inputMotivo.requerido !== false
+    && String(inputMotivo.value || '').trim().length < (inputMotivo.minLength ?? 5);
 
   const colores = {
     danger: 'bg-red-600 hover:bg-red-700',
@@ -81,6 +87,29 @@ export default function ModalConfirmar({
           <p className={`mb-5 text-sm leading-relaxed ${muted}`}>{mensaje}</p>
         )}
 
+        {inputMotivo && (
+          <div className="mb-5">
+            <textarea
+              value={inputMotivo.value ?? ''}
+              onChange={inputMotivo.onChange}
+              placeholder={inputMotivo.placeholder || 'Escribe el motivo...'}
+              rows={3}
+              maxLength={inputMotivo.maxLength ?? 500}
+              autoFocus
+              className={`w-full resize-none rounded-xl border px-3 py-2.5 text-sm outline-none transition ${
+                darkMode
+                  ? 'border-slate-700 bg-slate-950/60 text-white placeholder-slate-500 focus:border-amber-500'
+                  : 'border-gray-300 bg-gray-50 text-gray-900 placeholder-gray-400 focus:border-amber-500'
+              }`}
+            />
+            <p className={`mt-1.5 text-[11px] ${motivoCorto ? 'text-amber-500' : muted}`}>
+              {motivoCorto
+                ? `Escribe al menos ${inputMotivo.minLength ?? 5} caracteres.`
+                : `${String(inputMotivo.value || '').trim().length} de ${inputMotivo.maxLength ?? 500} caracteres`}
+            </p>
+          </div>
+        )}
+
         <div className="flex gap-3">
           <button
             type="button"
@@ -93,7 +122,7 @@ export default function ModalConfirmar({
           <button
             type="button"
             onClick={onConfirmar}
-            disabled={cargando}
+            disabled={cargando || motivoCorto}
             className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white transition disabled:opacity-60 ${colores[variante]}`}
           >
             {cargando && <Loader2 size={15} className="animate-spin" />}

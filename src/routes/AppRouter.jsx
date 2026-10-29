@@ -12,6 +12,7 @@ const BandejaAvisosSucursal = lazy(() => import('../modules/sucursal/BandejaAvis
 const PedidosPlanta = lazy(() => import('../modules/planta/PedidosPlanta'));
 const PedidosDespachador = lazy(() => import('../modules/despacho/PedidosDespachador'));
 const MisSucursalesDueno = lazy(() => import('../modules/dueno/MisSucursalesDueno'));
+const BandejaAvisosDueno = lazy(() => import('../modules/dueno/BandejaAvisosDueno'));
 const GestionDuenos = lazy(() => import('../modules/admin/GestionDuenos'));
 const GestionRutas = lazy(() => import('../modules/admin/GestionRutas'));
 const BandejaAvisos = lazy(() => import('../modules/admin/BandejaAvisos'));
@@ -19,6 +20,8 @@ const RecuperarContrasena = lazy(() => import('../modules/auth/RecuperarContrase
 const NuevaContrasena = lazy(() => import('../modules/auth/NuevaContrasena'));
 const PanelPrincipal = lazy(() => import('../modules/panel/PanelPrincipal'));
 const RegistroActividad = lazy(() => import('../modules/admin/RegistroActividad'));
+const PlanillaSemanal = lazy(() => import('../modules/superadmin/PlanillaSemanal'));
+const GestionRevisionesDueno = lazy(() => import('../modules/admin/GestionRevisionesDueno'));
 
 function CargandoRuta() {
   return (
@@ -33,11 +36,10 @@ export default function AppRouter() {
     <BrowserRouter>
       <Suspense fallback={<CargandoRuta />}>
       <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
-
         <Route path="/recuperar-contrasena" element={<RecuperarContrasena />} />
         <Route path="/nueva-contrasena" element={<NuevaContrasena />} />
-
         <Route
           path="/panel"
           element={
@@ -153,6 +155,14 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/mis-sucursales/avisos"
+          element={
+            <ProtectedRoute rolesPermitidos={['dueno', 'administrador']}>
+              <BandejaAvisosDueno />
+            </ProtectedRoute>
+          }
+        />
 
         <Route path="/sucursal/pedidos" element={<Navigate to="/sucursal" replace />} />
 
@@ -183,7 +193,14 @@ export default function AppRouter() {
           }
         />
 
-        <Route path="*" element={<Navigate to="/panel" replace />} />
+        <Route
+          path="/revisiones-dueno"
+          element={
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadmin']}>
+              <GestionRevisionesDueno />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
       </Suspense>
     </BrowserRouter>

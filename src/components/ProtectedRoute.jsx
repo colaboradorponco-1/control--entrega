@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { supabase } from '../config/supabaseClient';
-import { useEffect } from 'react';
+import { authRepository } from '../repositories/AuthRepository';
+import { useMemo } from 'react';
 
 /**
  * En las rutas que el superadmin puede abrir (por ejemplo el
@@ -10,20 +10,15 @@ import { useEffect } from 'react';
  * superadmin vuelve al panel principal.
  */
 export default function ProtectedRoute({ children, rolesPermitidos, excluirSuperadmin }) {
-  const { usuario, perfil, cargando, sesionExpirada, setSesionExpirada } = useAuth();
+  const { usuario, perfil, perfilError, cargando, sesionExpirada } = useAuth();
 
-  // Detecta cuando el token de Supabase no se pudo refrescar.
-  // En vez de dejar errores 401 por toda la app, mostramos un aviso
-  // y redirigimos al login para que el usuario vuelva a entrar.
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'TOKEN_REFRESHED') setSesionExpirada(false);
-      // Supabase emite SIGNED_OUT cuando el refresh falla definitivamente.
-      // Si el usuario no hizo logout activo, es una expiración.
-      if (event === 'SIGNED_OUT' && usuario) setSesionExpirada(true);
-    });
-    return () => subscription.unsubscribe();
-  }, [usuario, setSesionExpirada]);
+  // El aviso viaja en el state de la navegacion. Se memoiza para que
+  // <Navigate> no vuelva a navegar en cada render (su efecto depende
+  // del state y un objeto nuevo lo disparaba de nuevo).
+  const avisoState = useMemo(
+    () => ({ aviso: sesionExpirada ? 'Tu sesión expiró. Vuelve a iniciar sesión.' : null }),
+    [sesionExpirada]
+  );
 
   if (cargando) {
     return (
@@ -33,19 +28,40 @@ export default function ProtectedRoute({ children, rolesPermitidos, excluirSuper
     );
   }
 
-  // Sesión expirada: aviso claro antes de redirigir al login.
-  if (sesionExpirada || (!usuario && !cargando)) {
+  // Sesión expirada o sin sesión: al login.
+  if (sesionExpirada || !usuario) {
     return (
-      <Navigate
-        to="/login"
-        replace
-        state={{ aviso: sesionExpirada ? 'Tu sesión expiró. Vuelve a iniciar sesión.' : null }}
-      />
+      <Navigate to="/login" replace state={avisoState} />
     );
   }
 
-  if (!usuario || !perfil) {
-    return <Navigate to="/login" replace />;
+  // Hay sesión pero el perfil todavía no llegó: mostramos carga,
+  // sin redirigir (redirigir aquí provocaba rebotes /panel → /login).
+  if (!perfil && !perfilError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-gray-500 font-medium">Cargando sesión...</div>
+      </div>
+    );
+  }
+
+  // El perfil falló: avisamos sin entrar en un bucle de redirecciones.
+  if (!perfil) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-950 px-4 text-center text-slate-300">
+        <p className="text-sm font-semibold">No se pudo cargar tu perfil.</p>
+        <p className="max-w-sm text-xs text-slate-500">
+          {perfilError || 'Revisá tu conexión e intentá de nuevo.'}
+        </p>
+        <button
+          type="button"
+          onClick={() => authRepository.logout()}
+          className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:bg-slate-800"
+        >
+          Volver a iniciar sesión
+        </button>
+      </div>
+    );
   }
 
   const rolActual = perfil.roles?.nombre;

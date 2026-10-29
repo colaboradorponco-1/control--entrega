@@ -6,7 +6,7 @@ import { authRepository } from '../../repositories/AuthRepository';
 import AvatarUsuario from '../../components/AvatarUsuario';
 import EditarPerfil from '../perfil/EditarPerfil';
 import {
-  ArrowRight, Bell, Crown, FileSpreadsheet, LogOut, MapPin, Moon, PackageCheck, Route,
+  ArrowRight, Bell, Crown, FileSpreadsheet, FileText, LogOut, MapPin, Moon, PackageCheck, Route,
   ShieldCheck, ShoppingCart, Sun, Truck, UserCog, Users, Warehouse,
 } from 'lucide-react';
 
@@ -22,6 +22,7 @@ const PANELES_POR_ROL = {
       { titulo: 'Sucursales', detalle: 'Consulta y organiza sucursales.', ruta: '/sucursales', icono: MapPin },
       { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
+      { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
     ],
   },
   administrador: {
@@ -35,6 +36,7 @@ const PANELES_POR_ROL = {
       { titulo: 'Sucursales', detalle: 'Consulta y organiza sucursales.', ruta: '/sucursales', icono: MapPin },
       { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
+      { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
     ],
   },
   operador_planta: {

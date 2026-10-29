@@ -136,7 +136,9 @@ export default function PedidosSucursal() {
   const [errorReporte, setErrorReporte] = useState({});
   const [reporteAbierto, setReporteAbierto] = useState(null);
   const [aprobandoPedido, setAprobandoPedido] = useState(null);
+  const [pedidoAConfirmar, setPedidoAConfirmar] = useState(null);
   const [rechazando, setRechazando] = useState(null);
+  const [fotosRechazo, setFotosRechazo] = useState([]);
   const [motivoRechazo, setMotivoRechazo] = useState('');
   const [enviandoRechazo, setEnviandoRechazo] = useState(false);
   const [expandidoHistorial, setExpandidoHistorial] = useState(null);
@@ -466,15 +468,52 @@ export default function PedidosSucursal() {
   const excedeEnRecepcion = Boolean(recibiendo) && unidadesRecibidas > recibiendo.unidades;
   const faltaObservacionFaltante = hayFaltantesEnRecepcion && !formRecepcion.observaciones.trim();
 
-  const [cancelandoPedidoId, setCancelandoPedidoId] = useState(null);
-  const [pedidoAConfirmar, setPedidoAConfirmar] = useState(null);
+  const [seleccionadosParaAprobar, setSeleccionadosParaAprobar] = useState([]);
+  const [aprobandoMasivo, setAprobandoMasivo] = useState(false);
+
+  const alternarSeleccionAprobar = (id) => {
+    setSeleccionadosParaAprobar((actuales) =>
+      actuales.includes(id) ? actuales.filter((x) => x !== id) : [...actuales, id]
+    );
+  };
+
+  const seleccionarTodosPendientes = () => {
+    const pendientes = activosFiltrados
+      .filter((p) => p.estado === 'PENDIENTE')
+      .map((p) => p.id);
+    const todos = pendientes.length > 0 && pendientes.every((id) => seleccionadosParaAprobar.includes(id));
+    setSeleccionadosParaAprobar(todos ? [] : pendientes);
+  };
+
+  const aprobarMasivo = async () => {
+    if (!seleccionadosParaAprobar.length) return;
+    setAprobandoMasivo(true);
+    try {
+      await Promise.all(
+        seleccionadosParaAprobar.map((id) => pedidosRepository.actualizarEstado(id, 'APROBADO'))
+      );
+      setMensaje({ tipo: 'exito', texto: `${seleccionadosParaAprobar.length} pedido(s) aprobado(s).` });
+      setSeleccionadosParaAprobar([]);
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudieron aprobar los pedidos' });
+      await cargar({ silencioso: true });
+    } finally {
+      setAprobandoMasivo(false);
+    }
+  };
 
   const handleCancelar = async (pedidoId, motivo) => {
+    const motivoLimpio = String(motivo || '').trim();
+    if (motivoLimpio.length < 5) {
+      setMensaje({ tipo: 'error', texto: 'Escribe el motivo de la cancelación (mínimo 5 caracteres).' });
+      return;
+    }
     try {
       setEnviandoRechazo(true);
       const { error } = await supabase.rpc('cancelar_pedido', {
         p_pedido_id: pedidoId,
-        p_motivo: motivo,
+        p_motivo: motivoLimpio,
       });
       if (error) throw error;
       setMensaje({ tipo: 'exito', texto: `Pedido #${pedidoId} cancelado.` });
@@ -507,10 +546,25 @@ export default function PedidosSucursal() {
 
     setEnviandoRechazo(true);
     try {
+      // Subir fotos si hay
+      let rutasFotos = [];
+      if (fotosRechazo.length > 0) {
+        rutasFotos = await evidenciasRepository.subirFotosExtra(fotosRechazo, `pedido-${rechazando.id}/rechazo`);
+      }
       await pedidosRepository.rechazar(rechazando.id, motivo);
+      // Si hay fotos, guardarlas en el motivo o en una tabla aparte
+      // Por ahora, el motivo incluye la referencia a las fotos
+      if (rutasFotos.length > 0) {
+        // Actualizar el pedido con las fotos de rechazo
+        await supabase
+          .from('pedidos')
+          .update({ motivo_rechazo: motivo + `\n[Fotos: ${rutasFotos.join(', ')}]` })
+          .eq('id', rechazando.id);
+      }
       setMensaje({ tipo: 'exito', texto: `Pedido #${rechazando.id} rechazado. El administrador fue avisado.` });
       setRechazando(null);
       setMotivoRechazo('');
+      setFotosRechazo([]);
       await cargar({ silencioso: true });
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudo rechazar el pedido' });
@@ -897,8 +951,19 @@ export default function PedidosSucursal() {
     const falta = p.estado === 'RECOGIDO';
 
     return (
-      <div key={p.id} data-pedido-id={p.id} className={`${card} border rounded-2xl p-4`}>
+      <div key={p.id} data-pedido-id={p.id} className={`${card} border rounded-2xl p-2.5`}>
         <div className="flex items-start gap-3">
+          {esAdmin && p.estado === 'PENDIENTE' && (
+            <label className="flex items-center pt-1" title="Seleccionar para aprobar">
+              <input
+                type="checkbox"
+                checked={seleccionadosParaAprobar.includes(p.id)}
+                onChange={() => alternarSeleccionAprobar(p.id)}
+                className="h-4 w-4 cursor-pointer accent-violet-500"
+                aria-label={`Seleccionar pedido #${p.id}`}
+              />
+            </label>
+          )}
           <div className={`p-2.5 rounded-xl shrink-0 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
             <Icono size={17} className="text-amber-500" />
           </div>
@@ -922,7 +987,7 @@ export default function PedidosSucursal() {
               </p>
             ) : (
               <>
-                <div className="mt-4 overflow-x-auto pb-1" aria-label={`Seguimiento del pedido: ${est.label}`}>
+                <div className="mt-2 overflow-x-auto pb-1" aria-label={`Seguimiento del pedido: ${est.label}`}>
                   <div className="relative flex min-w-[440px] justify-between">
                     <div className={`absolute left-5 right-5 top-[11px] h-0.5 ${darkMode ? 'bg-slate-700' : 'bg-gray-200'}`}>
                       <div
@@ -934,8 +999,8 @@ export default function PedidosSucursal() {
                       const completado = index < pasoActual || p.estado === 'ENTREGADO';
                       const actual = index === pasoActual;
                       return (
-                        <div key={paso.estado} className="relative z-10 flex w-20 flex-col items-center gap-1.5 text-center">
-                          <span className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+                        <div key={paso.estado} className="relative z-10 flex w-16 flex-col items-center gap-1 text-center">
+                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border-2 ${
                             completado
                               ? 'border-emerald-500 bg-emerald-500 text-white'
                               : actual
@@ -945,10 +1010,10 @@ export default function PedidosSucursal() {
                                   : 'border-gray-300 bg-white text-gray-400'
                           }`}>
                             {completado
-                              ? <CheckCircle size={14} />
-                              : <span className="text-[10px] font-bold">{index + 1}</span>}
+                              ? <CheckCircle size={12} />
+                              : <span className="text-[9px] font-bold">{index + 1}</span>}
                           </span>
-                          <span className={`text-[10px] leading-tight ${
+                          <span className={`text-[9px] leading-tight ${
                             actual ? 'font-bold text-purple-500' : completado ? 'font-semibold text-emerald-500' : muted
                           }`}>
                             {paso.label}
@@ -1109,11 +1174,10 @@ export default function PedidosSucursal() {
             {p.estado === 'PENDIENTE' && esSucursal && (
               <div className="mt-3 flex gap-2">
                 <button
-                  onClick={() => setPedidoAConfirmar(p)}
-                  disabled={cancelandoPedidoId === p.id}
+                  onClick={() => { setMotivoRechazo(''); setPedidoAConfirmar(p); }}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-500/30 px-3 py-2 text-xs font-bold text-red-400 transition hover:bg-red-500/10 disabled:opacity-50"
                 >
-                  {cancelandoPedidoId === p.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
+                  <Ban size={13} />
                   Cancelar pedido
                 </button>
                 <button
@@ -1851,7 +1915,44 @@ export default function PedidosSucursal() {
                   </button>
                 </div>
               ) : (
+                <>
+                {esAdmin && seleccionadosParaAprobar.length > 0 && (
+                  <div className={`mb-3 flex items-center justify-between rounded-xl border p-3 ${darkMode ? 'bg-violet-950/30 border-violet-500/30' : 'bg-violet-50 border-violet-200'}`}>
+                    <span className={`text-sm font-bold ${darkMode ? 'text-violet-300' : 'text-violet-900'}`}>
+                      {seleccionadosParaAprobar.length} pedido(s) seleccionado(s)
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSeleccionadosParaAprobar([])}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${input}`}
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={aprobarMasivo}
+                        disabled={aprobandoMasivo}
+                        className="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-60"
+                      >
+                        {aprobandoMasivo ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                        Aprobar seleccionados
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {esAdmin && activosFiltrados.some((p) => p.estado === 'PENDIENTE') && (
+                  <div className="mb-2 flex items-center gap-2">
+                    <button
+                      onClick={seleccionarTodosPendientes}
+                      className={`text-xs font-bold ${darkMode ? 'text-violet-400' : 'text-violet-600'} hover:underline`}
+                    >
+                      {seleccionadosParaAprobar.length === activosFiltrados.filter((p) => p.estado === 'PENDIENTE').length
+                        ? 'Deseleccionar todos'
+                        : 'Seleccionar todos los pendientes'}
+                    </button>
+                  </div>
+                )}
                 <div className="space-y-2.5">{activosFiltrados.map(renderPedido)}</div>
+                </>
               )}
             </section>
           </>
@@ -1902,10 +2003,26 @@ export default function PedidosSucursal() {
                 : `${motivoRechazo.trim().length} de 500 caracteres`}
             </p>
 
+            <label className={`mt-3 block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
+              Fotos de evidencia (opcional)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(e) => setFotosRechazo(Array.from(e.target.files || []))}
+              className={`w-full px-4 py-2 border rounded-xl text-sm outline-none focus:ring-2 transition ${input}`}
+            />
+            {fotosRechazo.length > 0 && (
+              <p className={`mt-1 text-[11px] ${muted}`}>
+                {fotosRechazo.length} foto(s) seleccionada(s)
+              </p>
+            )}
+
             <div className="mt-5 flex gap-2">
               <button
                 type="button"
-                onClick={() => { setRechazando(null); setMotivoRechazo(''); }}
+                onClick={() => { setRechazando(null); setMotivoRechazo(''); setFotosRechazo([]); }}
                 className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold border transition ${
                   darkMode
                     ? 'border-slate-800 text-slate-400 hover:bg-slate-800'
@@ -2142,6 +2259,8 @@ export default function PedidosSucursal() {
             value: motivoRechazo,
             onChange: (e) => setMotivoRechazo(e.target.value),
             placeholder: 'Motivo de la cancelación...',
+            minLength: 5,
+            maxLength: 500,
           }
         } : null}
         onCerrar={() => {

@@ -36,7 +36,7 @@ const guardar = (clave, valor) => {
 };
 
 export default function Login() {
-  const { usuario, perfil } = useAuth();
+  const { usuario, perfil, sesionExpirada } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -51,14 +51,19 @@ export default function Login() {
   const location = useLocation();
   const refEmail = useRef(null);
 
-  // Aviso de sesión expirada proveniente de ProtectedRoute
+  // Aviso de sesión expirada proveniente de ProtectedRoute. Se muestra
+  // una sola vez y se limpia con React Router: usar
+  // window.history.replaceState a mano dejaba el historial del router
+  // desincronizado (y era el origen del aviso de "throttling").
   useEffect(() => {
-    if (location.state?.aviso) {
-      setAviso(location.state.aviso);
-      // Limpiar el state para que no reaparezca al refrescar
-      window.history.replaceState({}, '');
-    }
-  }, [location.state?.aviso]);
+    if (!location.state?.aviso) return;
+
+    setAviso(location.state.aviso);
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: null }
+    );
+  }, [location.state?.aviso, location.pathname, location.search, location.hash, navigate]);
 
   // Cuenta regresiva del bloqueo
   useEffect(() => {
@@ -87,10 +92,11 @@ export default function Login() {
   // login. Evita quedarse trabado en "no me deja entrar".
   useEffect(() => {
     const rol = perfil?.roles?.nombre;
+    if (sesionExpirada) return;
     if (usuario && perfil && perfil.activo !== false && ROLES_VALIDOS.includes(rol)) {
       navigate('/panel', { replace: true });
     }
-  }, [usuario, perfil, navigate]);
+  }, [usuario, perfil, sesionExpirada, navigate]);
 
   const bloqueado = restante > 0;
   const minutos = Math.floor(restante / 60);

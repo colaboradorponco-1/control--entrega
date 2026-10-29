@@ -1,6 +1,21 @@
 import { supabase } from '../config/supabaseClient';
 import { esColumnaFaltante } from './columnaFalta';
 
+// Supabase emite SIGNED_OUT tanto cuando el usuario cierra sesion a
+// proposito como cuando el token ya no se puede renovar. Esta marca
+// permite distinguirlos: solo el segundo caso es una "sesion expirada".
+let logoutSolicitado = false;
+
+export const consumirLogoutSolicitado = () => {
+  const solicitado = logoutSolicitado;
+  logoutSolicitado = false;
+  return solicitado;
+};
+
+export const limpiarLogoutSolicitado = () => {
+  logoutSolicitado = false;
+};
+
 // Usuario sin perfil: un rol sin permisos (fail closed).
 const sinPerfil = () => ({
   id: null,
@@ -119,8 +134,14 @@ export const authRepository = {
 
   // 3. Cerrar sesión
   async logout() {
+    // Marca el cierre como intencional para que la app no lo confunda
+    // con una sesión expirada.
+    logoutSolicitado = true;
     const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    if (error) {
+      logoutSolicitado = false;
+      throw error;
+    }
   },
 
   // 4. Enviar el correo de recuperacion. Supabase responde OK tanto si
