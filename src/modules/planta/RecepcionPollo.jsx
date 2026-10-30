@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -8,7 +8,7 @@ import { authRepository } from '../../repositories/AuthRepository';
 import FirmaCanvas from '../../components/FirmaCanvas';
 import SelectorFoto from '../../components/SelectorFoto';
 import FotosObservaciones from '../../components/FotosObservaciones';
-import { LogOut, PackagePlus, Scale, Hash, DollarSign, FileText, CheckCircle, AlertCircle, Sun, Moon, ShoppingCart, User, Eye } from 'lucide-react';
+import { ArrowLeft, LogOut, PackagePlus, Scale, Hash, DollarSign, FileText, CheckCircle, AlertCircle, Sun, Moon, ShoppingCart, User, Eye } from 'lucide-react';
 
 export default function RecepcionPollo() {
   const navigate = useNavigate();
@@ -19,27 +19,32 @@ export default function RecepcionPollo() {
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
+  // Estados del formulario de recepción
+  const [unidades, setUnidades] = useState('');
+  const [kilos, setKilos] = useState(''); // AGREGADO: Estado original de kilos
+  const [kilosCalculados, setKilosCalculados] = useState(0);
+
   const [proveedorId, setProveedorId] = useState('');
   const [numeroRecibo, setNumeroRecibo] = useState('');
-  const [kilos, setKilos] = useState('');
-  const [unidades, setUnidades] = useState('');
   const [precioPorKilo, setPrecioPorKilo] = useState('');
   const [entregadoPor, setEntregadoPor] = useState('');
   const [recibidoPor, setRecibidoPor] = useState('');
   const [observaciones, setObservaciones] = useState('');
 
-  // Evidencia: una foto y dos firmas, la de quien trae y la de quien recibe
+// Sincronizar kilosCalculados con kilos cada vez que kilos cambia
+useEffect(() => {
+  setKilosCalculados(parseFloat(kilos) || 0);
+}, [kilos]);
+
+// Evidencia: una foto y dos firmas, la de quien trae y la de quien recibe
   const [foto, setFoto] = useState(null);
   const [firmaEntrega, setFirmaEntrega] = useState(null);
   const [firmaRecepcion, setFirmaRecepcion] = useState(null);
   const [fotosExtra, setFotosExtra] = useState([]);
+  const [ubicacion, setUbicacion] = useState(null);
   const [viendo, setViendo] = useState(null);
 
-  useEffect(() => {
-    cargarDatos();
-  }, []);
-
-  const cargarDatos = async () => {
+  const cargarDatos = useCallback(async () => {
     try {
       const listProveedores = await recepcionRepository.obtenerProveedores();
       setProveedores(listProveedores);
@@ -49,14 +54,25 @@ export default function RecepcionPollo() {
     } catch (err) {
       console.error('Error al cargar datos:', err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    cargarDatos();
+  }, [cargarDatos]);
+
+  // Auto-cierre del mensaje de éxito a los 5 segundos.
+  useEffect(() => {
+    if (mensaje?.tipo !== 'ok') return;
+    const t = setTimeout(() => setMensaje(null), 5000);
+    return () => clearTimeout(t);
+  }, [mensaje]);
 
   const total = useMemo(() => {
-    const k = parseFloat(kilos);
+    const k = parseFloat(kilosCalculados);
     const p = parseFloat(precioPorKilo);
     if (Number.isNaN(k) || Number.isNaN(p)) return null;
     return (k * p).toFixed(2);
-  }, [kilos, precioPorKilo]);
+  }, [kilosCalculados, precioPorKilo]);
 
   const limpiarFormulario = () => {
     setNumeroRecibo('');
@@ -70,6 +86,7 @@ export default function RecepcionPollo() {
     setFirmaEntrega(null);
     setFirmaRecepcion(null);
     setFotosExtra([]);
+    setUbicacion(null);
   };
 
   const handleSubmit = async (e) => {
@@ -99,6 +116,8 @@ export default function RecepcionPollo() {
       return;
     }
 
+    setMensaje(null);
+
     setCargando(true);
 
     try {
@@ -115,6 +134,7 @@ export default function RecepcionPollo() {
         foto,
         firmaEntrega: evidenciasRepository.dataUrlABlob(firmaEntrega),
         firmaRecepcion: evidenciasRepository.dataUrlABlob(firmaRecepcion),
+        ubicacion,
       });
 
       setMensaje({ tipo: 'exito', texto: 'Lote registrado con foto y las dos firmas' });
@@ -160,6 +180,13 @@ export default function RecepcionPollo() {
           <p className={`text-xs sm:text-sm mt-1 ${muted}`}>Operador: <span className={`font-medium ${strong}`}>{perfil?.nombre_completo}</span></p>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+          <button
+            onClick={() => navigate('/panel')}
+            aria-label="Volver al panel"
+            className={`p-2.5 rounded-xl border transition ${darkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'}`}
+          >
+            <ArrowLeft size={18} />
+          </button>
           <button
             onClick={toggleTheme}
             aria-label="Cambiar modo"
@@ -362,6 +389,8 @@ export default function RecepcionPollo() {
               onError={(texto) => setMensaje({ tipo: 'error', texto })}
               theme={{ borde: input, texto: label, tenue: muted, hoja: card }}
             />
+
+            
 
             <button
               type="submit"

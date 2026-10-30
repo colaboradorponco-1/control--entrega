@@ -1,3 +1,26 @@
+@import "tailwindcss";
+
+/* El tema se cambia con la clase .dark en <html>, no con el
+   sistema operativo. Esto hace que dark:* siga el toggle. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 usa currentColor por defecto en los bordes; el
+   proyecto se diseñó con el gris claro de Tailwind v3. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
+
 html {
   background-color: #f3f4f6;
 }
@@ -17,4 +40,13 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* leaflet se apila con z-index internos muy altos (los controles llegan
+   a 1000). sin esto, el mapa se dibuja por encima de los modales, los
+   desplegables y el formulario. aislarlo en su propio contexto de
+   apilado lo deja siempre por debajo. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 0;
 }

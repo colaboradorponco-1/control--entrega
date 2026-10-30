@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -10,27 +10,31 @@ import FotosObservaciones from './FotosObservaciones';
 import {
   LogOut, Sun, Moon, ArrowLeft, CheckCircle, AlertCircle,
   PackageCheck, Loader2, Store, CalendarDays, ShoppingCart, X, Truck,
-  FileCheck2
+  FileCheck2, Boxes, RefreshCw
 } from 'lucide-react';
 
 const ESTADOS = {
   PENDIENTE: 'Pendiente',
+  APROBADO: 'Aprobado',
   EN_PREPARACION: 'En preparación',
   LISTO: 'Listo',
   RECOGIDO: 'En camino',
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
+  RECHAZADO: 'Rechazado',
 };
 
-const ORDEN = ['PENDIENTE', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO', 'CANCELADO'];
+const ORDEN = ['PENDIENTE', 'APROBADO', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO', 'CANCELADO', 'RECHAZADO'];
 
 const BADGE = {
   PENDIENTE: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  APROBADO: 'bg-violet-500/10 text-violet-500 border-violet-500/20',
   EN_PREPARACION: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
   LISTO: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
   RECOGIDO: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
   ENTREGADO: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
   CANCELADO: 'bg-red-500/10 text-red-500 border-red-500/20',
+  RECHAZADO: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
 };
 
 // Pantalla compartida por planta y despachador
@@ -52,14 +56,29 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
   const [fotoCarga, setFotoCarga] = useState(null);
   const [firmaCarga, setFirmaCarga] = useState(null);
   const [fotosExtra, setFotosExtra] = useState([]);
+  const [ubicacion, setUbicacion] = useState(null);
+  const [estadoGps, setEstadoGps] = useState('');
+  const [disponibilidad, setDisponibilidad] = useState(null);
+  const [errorDisponibilidad, setErrorDisponibilidad] = useState('');
+  const [mostrarInventario, setMostrarInventario] = useState(false);
+  const [actualizandoInventario, setActualizandoInventario] = useState(false);
+  const ultimaActualizacionGps = useRef(0);
+
+  const pedidosEnCaminoKey = useMemo(
+    () => pedidos.filter((pedido) => pedido.estado === 'RECOGIDO').map((pedido) => pedido.id).join(','),
+    [pedidos]
+  );
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
+  const input = darkMode
+    ? 'bg-slate-950/60 border-slate-800 text-white placeholder-slate-500 focus:border-amber-500 focus:ring-amber-500/20'
+    : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400 focus:border-amber-500 focus:ring-amber-500/20';
   const label = darkMode ? 'text-slate-300' : 'text-gray-600';
   const muted = darkMode ? 'text-slate-400' : 'text-gray-500';
   const strong = darkMode ? 'text-white' : 'text-gray-900';
   const normal = darkMode ? 'text-slate-300' : 'text-gray-700';
 
-  const cargar = async () => {
+  const cargar = useCallback(async () => {
     try {
       setCargando(true);
       setPedidos(await pedidosRepository.listar());
@@ -68,11 +87,94 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
     } finally {
       setCargando(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     cargar();
-  }, []);
+  }, [cargar]);
+
+  useEffect(() => {
+    if (!['operador_planta', 'administrador', 'superadministrador'].includes(perfil?.roles?.nombre)) return undefined;
+
+    let vigente = true;
+    const actualizarDisponibilidad = async () => {
+      try {
+        const stock = await pedidosRepository.obtenerDisponibilidadPedidosPlanta();
+        if (!vigente) return;
+        setDisponibilidad(stock);
+        setErrorDisponibilidad('');
+      } catch (err) {
+        if (!vigente) return;
+        setErrorDisponibilidad(err.message || 'No se pudo consultar el inventario de planta');
+      }
+    };
+
+    actualizarDisponibilidad();
+    const intervalo = window.setInterval(actualizarDisponibilidad, 30000);
+    return () => {
+      vigente = false;
+      window.clearInterval(intervalo);
+    };
+  }, [perfil?.roles?.nombre]);
+
+  useEffect(() => {
+    const rol = perfil?.roles?.nombre;
+    if (rol !== 'despachador' || !pedidosEnCaminoKey) {
+      setEstadoGps('');
+      return undefined;
+    }
+    if (!window.isSecureContext) {
+      setEstadoGps('El GPS requiere abrir la aplicación desde HTTPS.');
+      return undefined;
+    }
+    if (!navigator.geolocation) {
+      setEstadoGps('Este dispositivo o navegador no ofrece geolocalización.');
+      return undefined;
+    }
+
+    setEstadoGps('Esperando señal GPS...');
+    const pedidoIds = pedidosEnCaminoKey.split(',').map(Number);
+    let activo = true;
+    const watchId = navigator.geolocation.watchPosition(
+      async (posicion) => {
+        if (!activo) return;
+        setEstadoGps('Ubicación GPS recibida; compartiendo con las sucursales de los pedidos en camino.');
+        const ahora = Date.now();
+        if (ahora - ultimaActualizacionGps.current < 5000) return;
+        ultimaActualizacionGps.current = ahora;
+
+        const resultados = await Promise.allSettled(
+          pedidoIds.map((pedidoId) => pedidosRepository.guardarUbicacionRepartidor({
+            pedidoId,
+            despachadorId: perfil.id,
+            latitude: posicion.coords.latitude,
+            longitude: posicion.coords.longitude,
+            precisionM: posicion.coords.accuracy,
+          }))
+        );
+        if (!activo) return;
+        const fallo = resultados.find((resultado) => resultado.status === 'rejected');
+        if (fallo) {
+          setEstadoGps(`No se pudo guardar el GPS: ${fallo.reason?.message || 'error desconocido'}`);
+        }
+      },
+      (error) => {
+        if (!activo) return;
+        const detalle = error.code === error.PERMISSION_DENIED
+          ? 'Permiso de ubicación denegado. Activa el GPS para compartir la ruta.'
+          : error.code === error.POSITION_UNAVAILABLE
+            ? 'El dispositivo no pudo obtener la ubicación GPS.'
+            : 'Se agotó el tiempo de espera del GPS.';
+        setEstadoGps(detalle);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    );
+
+    return () => {
+      activo = false;
+      navigator.geolocation.clearWatch(watchId);
+    };
+  }, [perfil?.id, perfil?.roles?.nombre, pedidosEnCaminoKey]);
 
   useEffect(() => {
     if (!mensaje) return;
@@ -100,6 +202,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
     setFotoCarga(null);
     setFirmaCarga(null);
     setFotosExtra([]);
+    setUbicacion(null);
   };
 
   const cambiarEstado = async (p, siguiente) => {
@@ -108,6 +211,14 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
       await pedidosRepository.actualizarEstado(p.id, siguiente);
       setMensaje({ tipo: 'exito', texto: `Pedido #${p.id} de ${p.sucursales?.nombre} → ${ESTADOS[siguiente]}` });
       await cargar();
+      if (siguiente === 'EN_PREPARACION') {
+        try {
+          setDisponibilidad(await pedidosRepository.obtenerDisponibilidadPedidosPlanta());
+          setErrorDisponibilidad('');
+        } catch (err) {
+          setErrorDisponibilidad(err.message || 'No se pudo actualizar el inventario de planta');
+        }
+      }
     } catch (err) {
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudo actualizar el pedido' });
     } finally {
@@ -149,6 +260,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
         fotosExtra,
         foto: fotoCarga,
         firma: firmaCarga,
+        ubicacion,
       });
       setMensaje({ tipo: 'exito', texto: `Carga registrada hacia ${pesando.sucursales?.nombre}` });
       setPesando(null);
@@ -174,6 +286,19 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
   );
 
   const pendientesAccion = pedidos.filter((p) => acciones.some((a) => a.estado === p.estado)).length;
+  const puedeVerInventario = ['operador_planta', 'administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
+
+  const actualizarInventario = async () => {
+    try {
+      setActualizandoInventario(true);
+      setDisponibilidad(await pedidosRepository.obtenerDisponibilidadPedidosPlanta());
+      setErrorDisponibilidad('');
+    } catch (err) {
+      setErrorDisponibilidad(err.message || 'No se pudo actualizar el inventario de planta');
+    } finally {
+      setActualizandoInventario(false);
+    }
+  };
 
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-gray-100 text-gray-900'}`}>
@@ -181,9 +306,10 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-3 md:py-4">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate('/panel')}
               className={`p-2.5 rounded-xl border transition ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
-              aria-label="Volver"
+              aria-label="Volver al panel"
+              title="Volver al panel"
             >
               <ArrowLeft size={18} />
             </button>
@@ -197,6 +323,23 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                 {pendientesAccion > 0 && <span className={`font-bold ${strong}`}> · {pendientesAccion} por atender</span>}
               </p>
             </div>
+            {puedeVerInventario && (
+              <button
+                onClick={() => {
+                  setMostrarInventario(true);
+                  actualizarInventario();
+                }}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${
+                  darkMode
+                    ? 'border-purple-800 bg-purple-950/50 text-purple-300 hover:bg-purple-900/50'
+                    : 'border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100'
+                }`}
+                aria-label="Ver inventario de planta"
+              >
+                <Boxes size={17} />
+                <span className="hidden sm:inline">Inventario</span>
+              </button>
+            )}
             <button
               onClick={toggleTheme}
               className={`p-2.5 rounded-xl border transition ${darkMode ? 'bg-slate-900 border-slate-800 text-amber-400' : 'bg-gray-50 border-gray-300 text-amber-500'}`}
@@ -216,6 +359,21 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
       </header>
 
       <main className="max-w-5xl mx-auto px-4 md:px-6 py-5 space-y-5">
+        {estadoGps && (
+          <div
+            role="status"
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              estadoGps.startsWith('No se pudo') || estadoGps.includes('denegado') || estadoGps.includes('requiere')
+                ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+            }`}
+          >
+            {estadoGps}
+            <span className="mt-1 block text-xs opacity-80">
+              Mantén abierta esta pantalla durante el trayecto; el navegador puede pausar el GPS si queda en segundo plano.
+            </span>
+          </div>
+        )}
         {mensaje && (
           <div className={`flex items-start gap-3 p-4 rounded-2xl border ${
             mensaje.tipo === 'error'
@@ -247,6 +405,12 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                 {items.map((p) => {
                   const disponibles = acciones.filter((a) => a.estado === estado);
                   const accion = disponibles[0];
+                  const requiereStock = accion?.siguiente === 'EN_PREPARACION';
+                  const stockVerificado = Boolean(disponibilidad) && !errorDisponibilidad;
+                  const stockInsuficiente = requiereStock
+                    && stockVerificado
+                    && Number(disponibilidad.unidades_disponibles) < Number(p.unidades);
+                  const esperaStock = requiereStock && !stockVerificado;
                   return (
                     <div key={p.id} className={`${card} border rounded-2xl p-4`}>
                       <div className="flex items-start gap-3">
@@ -273,16 +437,36 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                             <span className="ml-1">· pedido {new Date(p.creado_en).toLocaleDateString('es-BO')}</span>
                           </p>
                           {p.observaciones && <p className={`mt-2 text-xs italic ${muted}`}>“{p.observaciones}”</p>}
+                          {p.estado === 'RECHAZADO' && p.motivo_rechazo && (
+                            <p className={`mt-2 rounded-lg border border-rose-500/20 bg-rose-500/5 px-3 py-2 text-xs ${normal}`}>
+                              <span className="font-bold text-rose-400">Motivo del rechazo: </span>
+                              {p.motivo_rechazo}
+                            </p>
+                          )}
 
                           {accion && (
                             <button
                               onClick={() => ejecutarAccion(p, accion)}
-                              disabled={procesando === p.id}
+                              disabled={procesando === p.id || stockInsuficiente || esperaStock}
                               className={`mt-3 w-full flex items-center justify-center gap-2 ${accion.clase} disabled:opacity-60 px-4 py-2.5 rounded-xl text-sm font-bold transition`}
                             >
                               {procesando === p.id ? <Loader2 size={16} className="animate-spin" /> : <accion.icono size={16} />}
-                              {accion.texto}
+                              {stockInsuficiente
+                                ? 'Stock insuficiente'
+                                : esperaStock
+                                  ? 'Verificando inventario...'
+                                  : accion.texto}
                             </button>
+                          )}
+                          {stockInsuficiente && (
+                            <p className="mt-2 text-xs font-semibold text-amber-500">
+                              Este pedido necesita {p.unidades} unidades y quedan {disponibilidad.unidades_disponibles} disponibles. No se inicia hasta reponer inventario.
+                            </p>
+                          )}
+                          {requiereStock && errorDisponibilidad && (
+                            <p className="mt-2 text-xs font-semibold text-red-500">
+                              No se puede iniciar sin verificar el inventario.
+                            </p>
                           )}
 
                           {!accion && estado === 'ENTREGADO' && p.pedido_recepciones?.[0] && (
@@ -300,6 +484,81 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
           ))
         )}
       </main>
+
+      {mostrarInventario && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="inventario-pedidos-titulo"
+            className={`${card} w-full max-w-lg rounded-2xl border p-5 shadow-2xl`}
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h2 id="inventario-pedidos-titulo" className={`text-lg font-black ${strong}`}>
+                  Inventario de planta
+                </h2>
+                <p className={`mt-1 text-xs ${muted}`}>Disponible para iniciar pedidos aprobados</p>
+              </div>
+              <button
+                onClick={() => setMostrarInventario(false)}
+                className={`rounded-xl p-2 ${muted} hover:bg-slate-500/10`}
+                aria-label="Cerrar inventario"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {errorDisponibilidad ? (
+              <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-500">
+                No se pudo consultar el inventario: {errorDisponibilidad}
+              </p>
+            ) : disponibilidad ? (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className={`${card} rounded-xl border p-3`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-wide ${muted}`}>Físico</p>
+                    <p className={`mt-1 text-xl font-black ${strong}`}>{disponibilidad.unidades_stock} <span className="text-xs font-semibold">unid.</span></p>
+                    <p className={`text-xs ${muted}`}>{Number(disponibilidad.kilos_stock).toLocaleString()} kg</p>
+                  </div>
+                  <div className={`${card} rounded-xl border p-3`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-wide ${muted}`}>Reservado</p>
+                    <p className={`mt-1 text-xl font-black ${strong}`}>{disponibilidad.unidades_reservadas} <span className="text-xs font-semibold">unid.</span></p>
+                  </div>
+                  <div className={`${card} rounded-xl border p-3`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-wide ${muted}`}>Disponible</p>
+                    <p className={`mt-1 text-xl font-black ${Number(disponibilidad.unidades_disponibles) > 0 ? 'text-emerald-500' : 'text-amber-500'}`}>
+                      {disponibilidad.unidades_disponibles} <span className="text-xs font-semibold">unid.</span>
+                    </p>
+                  </div>
+                </div>
+                <p className={`mt-3 text-xs ${muted}`}>
+                  Se reservan pedidos en preparación, listos y en camino, hasta que la sucursal confirme la recepción.
+                </p>
+              </>
+            ) : (
+              <p className={`py-5 text-center text-sm ${muted}`}>Consultando inventario...</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={actualizarInventario}
+                disabled={actualizandoInventario}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold disabled:opacity-50 ${input}`}
+              >
+                <RefreshCw size={15} className={actualizandoInventario ? 'animate-spin' : ''} />
+                Actualizar
+              </button>
+              <button
+                onClick={() => setMostrarInventario(false)}
+                className="rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700"
+              >
+                Cerrar
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* Formulario 2: salida de la planta hacia el distribuidor */}
       {pesando && (
@@ -434,6 +693,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                 onError={(texto) => setMensaje({ tipo: 'error', texto })}
                 theme={{ borde: input, texto: label, tenue: muted, hoja: card }}
               />
+
 
               <div className="flex gap-3 pt-1">
                 <button

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Images, X, Trash2 } from 'lucide-react';
 
+const TEMA_VACIO = {};
+
 /**
  * elige la foto de dos maneras: sacarla en el momento con la
  * camara, o buscar una que ya este en la galeria.
@@ -12,7 +14,7 @@ import { Camera, Images, X, Trash2 } from 'lucide-react';
 export default function SelectorFoto({
   onSeleccionar,
   onError,
-  theme = {},
+  theme = TEMA_VACIO,
   etiqueta = 'Foto',
   ayuda,
   maxMB = 5,
@@ -27,7 +29,6 @@ export default function SelectorFoto({
     borde = 'border-slate-300',
     texto = 'text-slate-700',
     tenue = 'text-slate-400',
-    panel = 'bg-white border-slate-200',
     hoja = 'bg-white border-slate-200',
     opciones = 'hover:bg-slate-50',
   } = theme;

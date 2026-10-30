@@ -1,24 +1,27 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { sucursalesRepository } from '../../repositories/sucursalesRepository';
 import { authRepository } from '../../repositories/AuthRepository';
+import MapaUbicacion from '../../components/MapaUbicacion';
+import ModalConfirmar from '../../components/ModalConfirmar';
 import {
   LogOut, Sun, Moon, Plus, Pencil, Trash2, X,
-  Search, ArrowLeft, CheckCircle, AlertCircle, MapPin, Loader2, Route
+  Search, ArrowLeft, CheckCircle, AlertCircle, MapPin, Loader2, Route, ExternalLink
 } from 'lucide-react';
 
 const SECTOR_COLOR = {
   ESTE: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
   OESTE: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+  NORTE: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
+  CENTRO: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+  SUR: 'bg-orange-500/10 text-orange-500 border-orange-500/20',
   PARTICULAR: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
 };
 
-const EMPTY_FORM = { nombre: '', sector: '' };
+const EMPTY_FORM = { nombre: '', sector: '', ubicacion: null, enlaceMapa: '', stock_minimo: 0 };
 
 export default function GestionSucursales() {
-  const { usuario } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -26,13 +29,15 @@ export default function GestionSucursales() {
   const [sectores, setSectores] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
-  const [filtroRuta, setFiltroRuta] = useState('TODAS');
+  const [filtroZona, setFiltroZona] = useState('TODAS');
   const [mensaje, setMensaje] = useState(null);
 
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editandoId, setEditandoId] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  const [confirmar, setConfirmar] = useState(null);
+  const [procesandoConfirm, setProcesandoConfirm] = useState(false);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -45,7 +50,7 @@ export default function GestionSucursales() {
   const tableHead = darkMode ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-gray-50 text-gray-600 border-gray-200';
   const rowHover = darkMode ? 'hover:bg-slate-800/50' : 'hover:bg-gray-50';
 
-  const cargarDatos = async () => {
+  const cargarDatos = useCallback(async () => {
     try {
       setCargando(true);
       const [sucursalesData, sectoresData] = await Promise.all([
@@ -59,11 +64,11 @@ export default function GestionSucursales() {
     } finally {
       setCargando(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     cargarDatos();
-  }, []);
+  }, [cargarDatos]);
 
   useEffect(() => {
     if (!mensaje) return;
@@ -72,24 +77,32 @@ export default function GestionSucursales() {
   }, [mensaje]);
 
   const sucursalesFiltradas = sucursales.filter((s) => {
-    const coincideRuta = filtroRuta === 'TODAS' || s.sector === filtroRuta;
+    const coincideZona = filtroZona === 'TODAS' || s.sector === filtroZona;
     const coincideTexto = !busqueda || s.nombre.toLowerCase().includes(busqueda.toLowerCase());
-    return coincideRuta && coincideTexto;
+    return coincideZona && coincideTexto;
   });
 
-  const porRuta = sectores.map((ruta) => ({
-    ruta,
-    total: sucursales.filter((s) => s.sector === ruta).length,
+  const porZona = sectores.map((zona) => ({
+    zona,
+    total: sucursales.filter((s) => s.sector === zona).length,
   }));
 
   const abrirCrear = () => {
-    setForm({ nombre: '', sector: sectores[0] || '' });
+    setForm({ ...EMPTY_FORM, sector: sectores[0] || '' });
     setEditandoId(null);
     setModal('crear');
   };
 
   const abrirEditar = (s) => {
-    setForm({ nombre: s.nombre, sector: s.sector });
+      setForm({
+        nombre: s.nombre,
+        sector: s.sector,
+        ubicacion: s.latitude != null && s.longitude != null
+          ? { lat: Number(s.latitude), longitude: Number(s.longitude) }
+          : null,
+        enlaceMapa: s.map_url || '',
+        stock_minimo: s.stock_minimo || 0,
+      });
     setEditandoId(s.id);
     setModal('editar');
   };
@@ -107,8 +120,19 @@ export default function GestionSucursales() {
       return;
     }
     if (!form.sector.trim()) {
-      setMensaje({ tipo: 'error', texto: 'Selecciona la ruta' });
+      setMensaje({ tipo: 'error', texto: 'Selecciona la zona donde está la sucursal' });
       return;
+    }
+
+    const enlaceMapa = form.enlaceMapa.trim();
+    if (enlaceMapa) {
+      try {
+        const url = new URL(enlaceMapa);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Protocolo no permitido');
+      } catch {
+        setMensaje({ tipo: 'error', texto: 'Ingresa un enlace válido que comience con https:// o http://' });
+        return;
+      }
     }
 
     const nombre = form.nombre.trim();
@@ -117,18 +141,32 @@ export default function GestionSucursales() {
       (s) => s.nombre.toLowerCase() === nombre.toLowerCase() && s.sector === form.sector && s.id !== editandoId
     );
     if (duplicada) {
-      setMensaje({ tipo: 'error', texto: `Ya existe "${nombre}" en la ruta ${form.sector}` });
+      setMensaje({ tipo: 'error', texto: `Ya existe "${nombre}" en la zona ${form.sector}` });
       return;
     }
 
     try {
       setEnviando(true);
       if (editandoId) {
-        await sucursalesRepository.actualizar(editandoId, { nombre, sector: form.sector });
+        await sucursalesRepository.actualizar(editandoId, {
+          nombre,
+          sector: form.sector,
+          latitude: form.ubicacion?.lat ?? null,
+          longitude: form.ubicacion?.longitude ?? null,
+          map_url: enlaceMapa || null,
+          stock_minimo: parseInt(form.stock_minimo) || 0,
+        });
         setMensaje({ tipo: 'exito', texto: `Sucursal "${nombre}" actualizada` });
       } else {
-        await sucursalesRepository.crear({ nombre, sector: form.sector });
-        setMensaje({ tipo: 'exito', texto: `Sucursal "${nombre}" agregada a la ruta ${form.sector}` });
+        await sucursalesRepository.crear({
+          nombre,
+          sector: form.sector,
+          latitude: form.ubicacion?.lat ?? null,
+          longitude: form.ubicacion?.longitude ?? null,
+          map_url: enlaceMapa || null,
+          stock_minimo: parseInt(form.stock_minimo) || 0,
+        });
+        setMensaje({ tipo: 'exito', texto: `Sucursal "${nombre}" agregada en la zona ${form.sector}` });
       }
       cerrarModal();
       await cargarDatos();
@@ -142,25 +180,44 @@ export default function GestionSucursales() {
   const handleEliminar = async (s) => {
     try {
       const usos = await sucursalesRepository.contarUsos(s.id);
-      if (usos.despachos > 0 || usos.usuarios > 0) {
-        const partes = [];
-        if (usos.despachos > 0) partes.push(`${usos.despachos} despacho(s)`);
-        if (usos.usuarios > 0) partes.push(`${usos.usuarios} usuario(s)`);
-        setMensaje({
-          tipo: 'error',
-          texto: `No se puede eliminar "${s.nombre}": tiene ${partes.slice(0, -1).join(' y ')}${partes.length > 1 ? ' y ' : ''}${partes[partes.length - 1]}. Desvincúlalos primero para no perder el historial.`,
-        });
+      const partes = [];
+      if (usos.despachos > 0) partes.push(`${usos.despachos} despacho(s)`);
+      if (usos.pedidos > 0) partes.push(`${usos.pedidos} pedido(s)`);
+      if (usos.usuarios > 0) partes.push(`${usos.usuarios} usuario(s)`);
+
+      if (partes.length > 0) {
+        const listado = partes.length === 1 ? partes[0] : partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1];
+        setMensaje({ tipo: 'error', texto: `No se puede eliminar "${s.nombre}": tiene ${listado}. Borrarla rompería el historial.` });
         return;
       }
 
-      const confirmado = window.confirm(`¿Eliminar la sucursal "${s.nombre}" de la ruta ${s.sector}?`);
-      if (!confirmado) return;
-
-      await sucursalesRepository.eliminar(s.id);
-      setMensaje({ tipo: 'exito', texto: `Sucursal "${s.nombre}" eliminada` });
-      await cargarDatos();
+      setConfirmar({
+        titulo: `Eliminar "${s.nombre}"`,
+        mensaje: `Se va a eliminar la sucursal de la zona ${s.sector}. Esta acción no se puede deshacer.`,
+        labelConfirmar: 'Eliminar sucursal',
+        variante: 'danger',
+        onConfirmar: async () => {
+          try {
+            setProcesandoConfirm(true);
+            await sucursalesRepository.eliminar(s.id);
+            setMensaje({ tipo: 'exito', texto: `Sucursal "${s.nombre}" eliminada` });
+            await cargarDatos();
+          } catch (err) {
+            const violoFk = err?.code === '23503' || (err?.message || '').includes('foreign key constraint');
+            setMensaje({
+              tipo: 'error',
+              texto: violoFk
+                ? `No se puede eliminar "${s.nombre}" porque tiene registros asociados.`
+                : (err.message || 'No se pudo eliminar'),
+            });
+          } finally {
+            setProcesandoConfirm(false);
+            setConfirmar(null);
+          }
+        },
+      });
     } catch (err) {
-      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo eliminar la sucursal' });
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo verificar los usos' });
     }
   };
 
@@ -170,7 +227,7 @@ export default function GestionSucursales() {
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('/admin')}
+              onClick={() => navigate('/panel')}
               className={`p-2.5 rounded-xl border transition ${darkMode ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'}`}
               aria-label="Volver al panel"
             >
@@ -182,10 +239,10 @@ export default function GestionSucursales() {
               </div>
               <div className="min-w-0">
                 <h1 className={`text-base md:text-xl font-black tracking-tight truncate ${strong}`}>
-                  Sucursales y Rutas
+                  Sucursales
                 </h1>
                 <p className={`text-[10px] md:text-xs font-medium ${muted}`}>
-                  {sucursales.length} sucursales en {sectores.length} rutas
+                  {sucursales.length} sucursales en {sectores.length} zonas
                 </p>
               </div>
             </div>
@@ -225,15 +282,15 @@ export default function GestionSucursales() {
           </div>
         )}
 
-        {/* Resumen por ruta */}
+        {/* Resumen por zona */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <div className={`${card} border rounded-2xl p-4`}>
             <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Total</p>
             <p className="text-2xl font-black text-amber-500 mt-1">{sucursales.length}</p>
           </div>
-          {porRuta.map(({ ruta, total }) => (
-            <div key={ruta} className={`${card} border rounded-2xl p-4`}>
-              <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>{ruta}</p>
+          {porZona.map(({ zona, total }) => (
+            <div key={zona} className={`${card} border rounded-2xl p-4`}>
+              <p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>{zona}</p>
               <p className="text-2xl font-black mt-1">{total}</p>
             </div>
           ))}
@@ -252,19 +309,19 @@ export default function GestionSucursales() {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {['TODAS', ...sectores].map((ruta) => (
+            {['TODAS', ...sectores].map((zona) => (
               <button
-                key={ruta}
-                onClick={() => setFiltroRuta(ruta)}
+                key={zona}
+                onClick={() => setFiltroZona(zona)}
                 className={`px-3 py-2 text-xs font-bold rounded-xl border transition ${
-                  filtroRuta === ruta
+                  filtroZona === zona
                     ? 'bg-amber-500 text-slate-950 border-amber-500'
                     : darkMode
                       ? 'bg-slate-950/60 text-slate-400 border-slate-800 hover:bg-slate-800'
                       : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
                 }`}
               >
-                {ruta}
+                {zona === 'TODAS' ? 'Todas las zonas' : zona}
               </button>
             ))}
           </div>
@@ -274,7 +331,7 @@ export default function GestionSucursales() {
         <div className={`hidden md:block ${card} border rounded-2xl overflow-hidden`}>
           <div className={`flex items-center justify-between px-5 py-3 border-b ${tableHead}`}>
             <span className="text-xs font-bold uppercase tracking-wider">Sucursal</span>
-            <span className="text-xs font-bold uppercase tracking-wider">Ruta</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Zona / ubicación</span>
             <span className="text-xs font-bold uppercase tracking-wider text-right">Acciones</span>
           </div>
 
@@ -284,7 +341,7 @@ export default function GestionSucursales() {
             </div>
           ) : sucursalesFiltradas.length === 0 ? (
             <div className={`py-14 text-center ${muted}`}>
-              {busqueda || filtroRuta !== 'TODAS'
+              {busqueda || filtroZona !== 'TODAS'
                 ? 'Ninguna sucursal coincide con tu búsqueda.'
                 : 'Aún no hay sucursales registradas.'}
             </div>
@@ -302,6 +359,18 @@ export default function GestionSucursales() {
                     {s.sector}
                   </span>
                   <div className="flex items-center gap-1">
+                    {s.map_url && (
+                      <a
+                        href={s.map_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-lg text-sky-500 hover:bg-sky-500/10 transition"
+                        aria-label={`Abrir ubicación de ${s.nombre} en el mapa`}
+                        title="Abrir enlace de ubicación"
+                      >
+                        <ExternalLink size={15} />
+                      </a>
+                    )}
                     <button
                       onClick={() => abrirEditar(s)}
                       className="p-2 rounded-lg text-amber-500 hover:bg-amber-500/10 transition"
@@ -331,7 +400,7 @@ export default function GestionSucursales() {
             </div>
           ) : sucursalesFiltradas.length === 0 ? (
             <div className={`${card} border rounded-2xl py-12 text-center ${muted}`}>
-              {busqueda || filtroRuta !== 'TODAS' ? 'Sin resultados' : 'Sin sucursales'}
+              {busqueda || filtroZona !== 'TODAS' ? 'Sin resultados' : 'Sin sucursales'}
             </div>
           ) : (
             sucursalesFiltradas.map((s) => (
@@ -345,6 +414,18 @@ export default function GestionSucursales() {
                     {s.sector}
                   </span>
                 </div>
+                {s.map_url && (
+                  <a
+                    href={s.map_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2.5 rounded-xl text-sky-500 hover:bg-sky-500/10 transition"
+                    aria-label={`Abrir ubicación de ${s.nombre} en el mapa`}
+                    title="Abrir enlace de ubicación"
+                  >
+                    <ExternalLink size={16} />
+                  </a>
+                )}
                 <button
                   onClick={() => abrirEditar(s)}
                   className="p-2.5 rounded-xl text-amber-500 hover:bg-amber-500/10 transition"
@@ -368,7 +449,7 @@ export default function GestionSucursales() {
       {/* Modal */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className={`${card} border rounded-2xl w-full max-w-md p-5 md:p-6 shadow-2xl`}>
+          <div className={`${card} border rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 md:p-6 shadow-2xl`}>
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-amber-500/15 rounded-xl border border-amber-500/25">
@@ -400,21 +481,62 @@ export default function GestionSucursales() {
 
               <div>
                 <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
-                  Ruta / Sector
+                  Zona / ubicación
                 </label>
                 <input
                   type="text"
                   list="lista-rutas"
                   value={form.sector}
                   onChange={(e) => setForm({ ...form, sector: e.target.value.toUpperCase() })}
-                  placeholder="Ej. ESTE"
+                  placeholder="Ej. OESTE"
                   className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none transition ${input}`}
                 />
                 <datalist id="lista-rutas">
                   {sectores.map((s) => <option key={s} value={s} />)}
                 </datalist>
                 <p className={`mt-1.5 text-[11px] ${muted}`}>
-                  Escribe una ruta nueva para crearla. Se convierte a mayúsculas automáticamente.
+                  Indica dónde está la sucursal. Esto no crea ni asigna una ruta de reparto. Se convierte a mayúsculas automáticamente.
+                </p>
+              </div>
+
+              <div>
+                <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
+                  Stock Mínimo (Alerta)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.stock_minimo}
+                  onChange={(e) => setForm({ ...form, stock_minimo: e.target.value })}
+                  placeholder="Ej. 50"
+                  className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none transition ${input}`}
+                />
+                <p className={`mt-1.5 text-[11px] ${muted}`}>
+                  Cantidad mínima de unidades. Si el stock baja de esta cantidad, el dueño recibirá una alerta visual.
+                </p>
+              </div>
+
+              <div>
+                <label className={`mb-2 block text-xs font-semibold uppercase tracking-wider ${label}`}>
+                  Ubicación de la sucursal
+                </label>
+                <MapaUbicacion
+                  valor={form.ubicacion}
+                  onCambio={(ubicacion) => setForm((actual) => ({ ...actual, ubicacion }))}
+                  enlace={form.enlaceMapa}
+                  onEnlaceCambio={(enlaceMapa) => setForm((actual) => ({ ...actual, enlaceMapa }))}
+                  theme={{
+                    borde: input,
+                    texto: label,
+                    tenue: muted,
+                    hoja: card,
+                    pin: '#f59e0b',
+                    oscuro: darkMode,
+                  }}
+                  alto={240}
+                />
+                <p className={`mt-1.5 text-[11px] ${muted}`}>
+                  Busca una calle o pega un enlace de Maps para colocar el pin; también puedes tocar el mapa.
                 </p>
               </div>
 
@@ -439,6 +561,12 @@ export default function GestionSucursales() {
           </div>
         </div>
       )}
+
+      <ModalConfirmar
+        config={confirmar}
+        onCerrar={() => { if (!procesandoConfirm) setConfirmar(null); }}
+        cargando={procesandoConfirm}
+      />
     </div>
   );
 }

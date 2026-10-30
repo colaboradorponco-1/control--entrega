@@ -87,7 +87,7 @@ export const recepcionRepository = {
     const {
       numero_recibo, proveedor_id, kilos, unidades, precio_por_kilo,
       observaciones, foto, firmaEntrega, firmaRecepcion, entregado_por, recibido_por,
-      fotosExtra,
+      fotosExtra, ubicacion,
     } = datos;
 
     // Cada archivo sube a una carpeta con el numero de recibo,
@@ -104,7 +104,7 @@ export const recepcionRepository = {
       });
       rutasExtra = await evidenciasRepository.subirFotosExtra(fotosExtra, referencia);
     } catch (err) {
-      throw new Error('No se pudo subir la evidencia: ' + (err.message || 'revisa tu conexión'));
+      throw new Error('No se pudo subir la evidencia: ' + (err.message || 'revisa tu conexión'), { cause: err });
     }
 
     const { data, error } = await supabase.rpc('registrar_lote_proveedor', {
@@ -120,6 +120,8 @@ export const recepcionRepository = {
       p_observaciones: observaciones?.trim() || null,
       p_recibido_por: recibido_por?.trim() || null,
       p_fotos_extra: rutasExtra,
+      p_latitude: ubicacion?.lat ?? null,
+      p_longitud: ubicacion?.longitude ?? null,
     });
 
     if (error) throw error;
