@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { supabase } from '../../config/supabaseClient';
 import { authRepository } from '../../repositories/AuthRepository';
+import { duenosRepository } from '../../repositories/duenosRepository';
 import {
   ArrowLeft, LogOut, Sun, Moon, Loader2, Plus, X, FileText,
-  AlertTriangle, DollarSign, Eye, CheckCircle, Clock, Crown, AlertCircle,
+  AlertTriangle, DollarSign, Eye, CheckCircle, Clock, Crown, AlertCircle, Camera,
 } from 'lucide-react';
 import PanelNotificaciones from '../../components/PanelNotificaciones';
 
@@ -14,12 +15,6 @@ const TIPOS = [
   { valor: 'MULTA', label: 'Multa' },
   { valor: 'OBSERVACION', label: 'Observación' },
   { valor: 'ALERTA', label: 'Alerta' },
-];
-
-const SEVERIDADES = [
-  { valor: 'INFO', label: 'Informativa', color: 'text-blue-500' },
-  { valor: 'ADVERTENCIA', label: 'Advertencia', color: 'text-amber-500' },
-  { valor: 'GRAVE', label: 'Grave', color: 'text-red-500' },
 ];
 
 export default function GestionRevisionesDueno() {
@@ -36,13 +31,19 @@ export default function GestionRevisionesDueno() {
 
   const [form, setForm] = useState({
     dueno_id: '',
+    sucursal_id: '',
     titulo: '',
     descripcion: '',
     tipo: 'REVISION',
-    severidad: 'INFO',
-    monto_multa: '',
+    area_atencion_cliente: false,
+    area_personal: false,
+    area_comida: false,
+    area_limpieza: false,
+    area_infraestructura: false,
     documento_url: '',
   });
+  const [videosFiles, setVideosFiles] = useState([]);
+  const [sucursales, setSucursales] = useState([]);
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -50,18 +51,27 @@ export default function GestionRevisionesDueno() {
     : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400 focus:border-amber-500';
   const muted = darkMode ? 'text-slate-400' : 'text-gray-500';
   const strong = darkMode ? 'text-white' : 'text-gray-900';
+  const normal = darkMode ? 'text-slate-300' : 'text-gray-700';
 
   const cargar = useCallback(async () => {
     try {
       setCargando(true);
       setError(null);
       // Cargar dueños
-      const { data: duenosData, error: errDuenos } = await supabase
-        .from('duenos')
-        .select('id, nombre, empresa')
-        .order('nombre');
-      if (errDuenos) throw errDuenos;
-      setDuenos(duenosData || []);
+      try {
+        const duenosData = await duenosRepository.listar();
+        setDuenos(duenosData || []);
+        if (!duenosData || duenosData.length === 0) {
+          setError('No se encontraron dueños registrados. Crea dueños primero en Gestión de Dueños.');
+        }
+      } catch (e) {
+        setError('Error al cargar dueños: ' + (e.message || 'verifica que existan dueños'));
+        setDuenos([]);
+      }
+
+      // Cargar sucursales
+      const { data: sucData } = await supabase.from('sucursales').select('id, nombre, sector').order('nombre');
+      setSucursales(sucData || []);
 
       // Cargar revisiones recientes
       const { data: revData, error: errRev } = await supabase
@@ -89,18 +99,40 @@ export default function GestionRevisionesDueno() {
     try {
       setEnviando(true);
       setError(null);
+
+      // Subir videos a Supabase Storage
+      const videoUrls = await Promise.all(
+        videosFiles.map(async (file) => {
+          const fileName = `${Date.now()}-${file.name}`;
+          const { data: uploadData, error: uploadErr } = await supabase.storage
+            .from('revisiones-videos')
+            .upload(fileName, file, { cacheControl: '3600', upsert: false });
+          if (uploadErr) throw uploadErr;
+          const { data: urlData } = supabase.storage
+            .from('revisiones-videos')
+            .getPublicUrl(uploadData.path);
+          return urlData.publicUrl;
+        })
+      );
+
       const { error: err } = await supabase.rpc('crear_revision_dueno', {
         p_dueno_id: Number(form.dueno_id),
         p_titulo: form.titulo.trim(),
         p_descripcion: form.descripcion.trim(),
         p_tipo: form.tipo,
-        p_severidad: form.severidad,
-        p_monto_multa: form.monto_multa ? Number(form.monto_multa) : null,
+        p_sucursal_id: form.sucursal_id ? Number(form.sucursal_id) : null,
+        p_area_atencion_cliente: form.area_atencion_cliente,
+        p_area_personal: form.area_personal,
+        p_area_comida: form.area_comida,
+        p_area_limpieza: form.area_limpieza,
+        p_area_infraestructura: form.area_infraestructura,
         p_documento_url: form.documento_url.trim() || null,
+        p_videos: videoUrls,
       });
       if (err) throw err;
       setMensaje('✓ Revisión creada y notificada al dueño.');
-      setForm({ dueno_id: '', titulo: '', descripcion: '', tipo: 'REVISION', severidad: 'INFO', monto_multa: '', documento_url: '' });
+      setForm({ dueno_id: '', sucursal_id: '', titulo: '', descripcion: '', tipo: 'REVISION', area_atencion_cliente: false, area_personal: false, area_comida: false, area_limpieza: false, area_infraestructura: false, documento_url: '' });
+      setVideosFiles([]);
       setMostrarForm(false);
       await cargar();
     } catch (err) {
@@ -187,8 +219,11 @@ export default function GestionRevisionesDueno() {
                     className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm normal-case ${input}`}
                   >
                     <option value="">Selecciona un dueño</option>
+                    {duenos.length === 0 && (
+                      <option value="" disabled>No hay dueños registrados</option>
+                    )}
                     {duenos.map((d) => (
-                      <option key={d.id} value={d.id}>{d.nombre}{d.empresa ? ` · ${d.empresa}` : ''}</option>
+                      <option key={d.id} value={d.id}>{d.nombre}</option>
                     ))}
                   </select>
                 </label>
@@ -227,30 +262,20 @@ export default function GestionRevisionesDueno() {
                 />
               </label>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
-                  Severidad
+                  Sucursal (opcional)
                   <select
-                    value={form.severidad}
-                    onChange={(e) => setForm({ ...form, severidad: e.target.value })}
+                    value={form.sucursal_id}
+                    onChange={(e) => setForm({ ...form, sucursal_id: e.target.value })}
                     className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm normal-case ${input}`}
                   >
-                    {SEVERIDADES.map((s) => <option key={s.valor} value={s.valor}>{s.label}</option>)}
+                    <option value="">Todas / General</option>
+                    {sucursales.map((s) => (
+                      <option key={s.id} value={s.id}>{s.nombre}{s.sector ? ` · ${s.sector}` : ''}</option>
+                    ))}
                   </select>
                 </label>
-                {form.tipo === 'MULTA' && (
-                  <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
-                    Monto (Bs)
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={form.monto_multa}
-                      onChange={(e) => setForm({ ...form, monto_multa: e.target.value })}
-                      className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm normal-case ${input}`}
-                      placeholder="0.00"
-                    />
-                  </label>
-                )}
                 <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
                   URL del documento (opcional)
                   <input
@@ -260,6 +285,73 @@ export default function GestionRevisionesDueno() {
                     placeholder="https://..."
                   />
                 </label>
+                <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
+                  Videos de evidencia (opcional, máx. 50MB cada uno)
+                  <input
+                    type="file"
+                    accept="video/*"
+                    multiple
+                    onChange={(e) => setVideosFiles(Array.from(e.target.files || []))}
+                    className={`mt-2 w-full rounded-xl border px-4 py-2 text-sm ${input}`}
+                  />
+                  {videosFiles.length > 0 && (
+                    <p className={`mt-1 text-[11px] ${muted}`}>
+                      {videosFiles.length} video(s) seleccionado(s): {videosFiles.map((f) => f.name).join(', ')}
+                    </p>
+                  )}
+                </label>
+
+                <div className={`rounded-xl border p-4 ${darkMode ? 'border-slate-700 bg-slate-950/50' : 'border-gray-200 bg-gray-50'}`}>
+                  <p className={`text-xs font-bold uppercase tracking-wider ${muted} mb-3`}>Áreas afectadas</p>
+                  <div className="flex flex-wrap gap-4">
+                    <label className={`flex items-center gap-2 text-xs ${normal}`}>
+                      <input
+                        type="checkbox"
+                        checked={form.area_atencion_cliente}
+                        onChange={(e) => setForm({ ...form, area_atencion_cliente: e.target.checked })}
+                        className="h-4 w-4 accent-amber-500"
+                      />
+                      Atención al cliente
+                    </label>
+                    <label className={`flex items-center gap-2 text-xs ${normal}`}>
+                      <input
+                        type="checkbox"
+                        checked={form.area_personal}
+                        onChange={(e) => setForm({ ...form, area_personal: e.target.checked })}
+                        className="h-4 w-4 accent-amber-500"
+                      />
+                      Personal
+                    </label>
+                    <label className={`flex items-center gap-2 text-xs ${normal}`}>
+                      <input
+                        type="checkbox"
+                        checked={form.area_comida}
+                        onChange={(e) => setForm({ ...form, area_comida: e.target.checked })}
+                        className="h-4 w-4 accent-amber-500"
+                      />
+                      Comida
+                    </label>
+                    <label className={`flex items-center gap-2 text-xs ${normal}`}>
+                      <input
+                        type="checkbox"
+                        checked={form.area_limpieza}
+                        onChange={(e) => setForm({ ...form, area_limpieza: e.target.checked })}
+                        className="h-4 w-4 accent-amber-500"
+                      />
+                      Limpieza
+                    </label>
+                    <label className={`flex items-center gap-2 text-xs ${normal}`}>
+                      <input
+                        type="checkbox"
+                        checked={form.area_infraestructura}
+                        onChange={(e) => setForm({ ...form, area_infraestructura: e.target.checked })}
+                        className="h-4 w-4 accent-amber-500"
+                      />
+                      Infraestructura
+                    </label>
+                  </div>
+                </div>
+
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -306,9 +398,6 @@ export default function GestionRevisionesDueno() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`text-sm font-bold ${strong}`}>{r.titulo}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${severidadColor(r.severidad)}`}>
-                        {r.severidad}
-                      </span>
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${darkMode ? 'bg-slate-800 text-slate-300' : 'bg-gray-100 text-gray-600'}`}>
                         {r.tipo}
                       </span>
@@ -325,11 +414,7 @@ export default function GestionRevisionesDueno() {
                     <p className={`mt-1 text-xs ${muted}`}>
                       Dueño #{r.dueno_id} · {r.creado_por_nombre || 'Sistema'} · {new Date(r.creado_en).toLocaleString('es-BO')}
                     </p>
-                    {r.monto_multa && (
-                      <p className="mt-1 text-sm font-bold text-red-500">
-                        Monto: Bs. {Number(r.monto_multa).toFixed(2)}
-                      </p>
-                    )}
+
                     {r.documento_url && (
                       <a
                         href={r.documento_url}
@@ -339,6 +424,25 @@ export default function GestionRevisionesDueno() {
                       >
                         <Eye size={12} /> Ver documento
                       </a>
+                    )}
+                    {r.sucursal_id && (
+                      <p className={`text-[10px] ${muted} mt-0.5`}>
+                        Sucursal #{r.sucursal_id}
+                      </p>
+                    )}
+                    {(r.area_atencion_cliente || r.area_personal || r.area_comida || r.area_limpieza || r.area_infraestructura) && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {r.area_atencion_cliente && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-500">Atención al cliente</span>}
+                        {r.area_personal && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500/10 text-purple-500">Personal</span>}
+                        {r.area_comida && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500">Comida</span>}
+                        {r.area_limpieza && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500">Limpieza</span>}
+                        {r.area_infraestructura && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-500/10 text-gray-500">Infraestructura</span>}
+                      </div>
+                    )}
+                    {r.videos?.length > 0 && (
+                      <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-blue-500">
+                        <Camera size={12} /> {r.videos.length} video(s) adjunto(s)
+                      </div>
                     )}
                   </div>
                 </div>

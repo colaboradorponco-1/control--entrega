@@ -25,8 +25,8 @@ const FILTRAR = {
  * Bandeja de avisos del administrador.
  *
  * Aqui llegan los reportes de entrega de las sucursales y los
- * avisos de faltantes en la recepcion. El superadmin no entra:
- * los avisos van con destinatario, y el superadmin no esta en la
+ * avisos de faltantes en la recepcion. El superadministrador no entra:
+ * los avisos van con destinatario, y el superadministrador no esta en la
  * lista de destinatarios.
  */
 export default function BandejaAvisos() {

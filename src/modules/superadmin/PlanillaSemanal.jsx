@@ -9,7 +9,15 @@ import SeccionCompras from './SeccionCompras';
 import SeccionVentas from './SeccionVentas';
 import SeccionInventario from './SeccionInventario';
 import BotonesExportar from './BotonesExportar';
-import { aISO, diasDeSemana, formatoBs, inicioSemana, rangoSemana, sumarDias } from './planillaUtils';
+import {
+  aISO,
+  construirReporteCompras,
+  diasDeSemana,
+  formatoBs,
+  inicioSemana,
+  rangoSemana,
+  sumarDias,
+} from './planillaUtils';
 
 export default function PlanillaSemanal() {
   const navigate = useNavigate();
@@ -77,19 +85,7 @@ export default function PlanillaSemanal() {
       setSucursales(listaSucursales);
       setProveedores(listaProveedores);
 
-      const porProveedor = new Map();
-      for (const fila of filasCompras) {
-        const nombre = fila.proveedores?.nombre || 'Sin proveedor';
-        const actual = porProveedor.get(nombre) || { nombre, kg: 0, unidades: 0, monto: 0 };
-        actual.kg += Number(fila.kilos || 0);
-        actual.unidades += Number(fila.unidades || 0);
-        actual.monto += Number(fila.total_monto || 0);
-        porProveedor.set(nombre, actual);
-      }
-      setCompras([...porProveedor.values()].map((fila) => ({
-        ...fila,
-        precioProm: fila.kg > 0 ? fila.monto / fila.kg : 0,
-      })));
+      setCompras(filasCompras);
     } catch (err) {
       setAviso({ tipo: 'error', texto: 'No se pudo cargar la planilla: ' + (err.message || 'revisa tu conexión') });
     } finally {
@@ -224,15 +220,37 @@ export default function PlanillaSemanal() {
     exportarAPDF(['Proveedor', 'S. AYER', 'ENTRANTE', 'SALIENTE', 'S. HOY'], filas, `Inventario ${iso}`, `Inventario_${iso}`);
   };
 
+  const reporteCompras = () => construirReporteCompras(compras, proveedores, dias);
+  const definicionesCompras = [
+    { campo: 'kilos', etiqueta: 'Kg.' },
+    { campo: 'precio', etiqueta: 'Precio (Bs/kg)' },
+    { campo: 'unidades', etiqueta: 'Ud.' },
+    { campo: 'total', etiqueta: 'Total (Bs)' },
+    { campo: 'promedio', etiqueta: 'Prom. (kg/ud.)' },
+  ];
+  const filasComprasExport = () => {
+    const reporte = reporteCompras();
+    return reporte.filas.flatMap((proveedor) =>
+      definicionesCompras.map((definicion) => ({
+        Proveedor: proveedor.nombre,
+        Métrica: definicion.etiqueta,
+        ...Object.fromEntries(proveedor.dias.map((dia) => [dia.fecha, dia[definicion.campo]])),
+        'Total semana': proveedor.total[definicion.campo],
+      })),
+    );
+  };
   const exportarComprasExcel = () => exportarAExcel(
-    compras.map((fila) => ({
-      Proveedor: fila.nombre, Kg: fila.kg, Unidades: fila.unidades, 'Costo total (Bs)': fila.monto, 'Precio prom (Bs/kg)': fila.precioProm,
-    })),
+    filasComprasExport(),
     `Compras_${aISO(dias[0])}`
   );
   const exportarComprasPDF = () => exportarAPDF(
-    ['Proveedor', 'Kg', 'Unidades', 'Costo total (Bs)', 'Precio prom (Bs/kg)'],
-    compras.map((fila) => [fila.nombre, fila.kg, fila.unidades, formatoBs(fila.monto), formatoBs(fila.precioProm)]),
+    ['Proveedor', 'Métrica', ...dias.map((dia) => aISO(dia)), 'Total semana'],
+    filasComprasExport().map((fila) => [
+      fila.Proveedor,
+      fila.Métrica,
+      ...dias.map((dia) => fila[aISO(dia)]),
+      fila['Total semana'],
+    ]),
     `Compras ${rango}`,
     `Compras_${aISO(dias[0])}`
   );
@@ -288,7 +306,7 @@ export default function PlanillaSemanal() {
           </div>
         ) : (
           <div className="space-y-5">
-            <SeccionCompras filas={compras} oscuro={darkMode} acciones={<BotonesExportar oscuro={darkMode} onExcel={exportarComprasExcel} onPDF={exportarComprasPDF} />} />
+            <SeccionCompras reporte={reporteCompras()} oscuro={darkMode} acciones={<BotonesExportar oscuro={darkMode} onExcel={exportarComprasExcel} onPDF={exportarComprasPDF} />} />
             <SeccionVentas
               sucursales={sucursales}
               dias={dias}

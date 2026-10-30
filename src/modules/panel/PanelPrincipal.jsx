@@ -7,13 +7,13 @@ import AvatarUsuario from '../../components/AvatarUsuario';
 import EditarPerfil from '../perfil/EditarPerfil';
 import {
   ArrowRight, Bell, Crown, FileSpreadsheet, FileText, LogOut, MapPin, Moon, PackageCheck, Route,
-  ShieldCheck, ShoppingCart, Sun, Truck, UserCog, Users, Warehouse,
+  ShieldCheck, ShoppingCart, Sun, Truck, UserCog, Users, Warehouse, ClipboardList,
 } from 'lucide-react';
 
 const PANELES_POR_ROL = {
-  superadmin: {
-    titulo: 'Panel de Superadmin',
-    responsabilidad: 'Supervisa el sistema y administra exclusivamente las cuentas de administradores y Superadmin. Puede consultar pedidos, pero no aprobarlos.',
+  superadministrador: {
+    titulo: 'Panel de Superadministrador',
+    responsabilidad: 'Supervisa el sistema y administra exclusivamente las cuentas de administradores y superadministradores. Puede consultar pedidos, pero no aprobarlos.',
     accesos: [
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
       { titulo: 'Planilla de ventas', detalle: 'Ventas por sucursal, inventario y costos de la semana.', ruta: '/planilla', icono: FileSpreadsheet },
@@ -23,6 +23,7 @@ const PANELES_POR_ROL = {
       { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
       { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
+      { titulo: 'Reporte Rosticero', detalle: 'Reportes diarios de pollos rostizados.', ruta: '/rosticero', icono: ClipboardList },
     ],
   },
   administrador: {
@@ -37,6 +38,7 @@ const PANELES_POR_ROL = {
       { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
       { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
+      { titulo: 'Reporte Rosticero', detalle: 'Reportes diarios de pollos rostizados.', ruta: '/rosticero', icono: ClipboardList },
     ],
   },
   operador_planta: {
@@ -68,6 +70,20 @@ const PANELES_POR_ROL = {
       { titulo: 'Mis sucursales y pedidos', detalle: 'Consulta sucursales, solicita pedidos y sigue su avance.', ruta: '/mis-sucursales', icono: Crown },
     ],
   },
+  rosticero: {
+    titulo: 'Panel de Rosticero',
+    responsabilidad: 'Registra el reporte diario de pollos rostizados por sucursal.',
+    accesos: [
+      { titulo: 'Reporte diario', detalle: 'Registra el inventario y ventas de pollos del día.', ruta: '/rosticero', icono: ClipboardList },
+    ],
+  },
+  ayudante: {
+    titulo: 'Panel de Ayudante',
+    responsabilidad: 'Ayuda al superadministrador revisando múltiples establecimientos y enviando videos de evidencia.',
+    accesos: [
+      { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
+    ],
+  },
 };
 
 export default function PanelPrincipal() {
@@ -90,7 +106,7 @@ export default function PanelPrincipal() {
             <AvatarUsuario perfil={perfil} size={56} />
             <div>
               <p className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-500">
-                {perfil?.roles?.nombre === 'superadmin' ? <Crown size={16} /> : <ShieldCheck size={16} />}
+                {perfil?.roles?.nombre === 'superadministrador' ? <Crown size={16} /> : <ShieldCheck size={16} />}
                 {rolLabel}
               </p>
               <h1 className={`text-2xl font-black md:text-3xl ${strong}`}>

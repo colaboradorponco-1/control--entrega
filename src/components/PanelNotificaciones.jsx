@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAvisos } from '../hooks/useAvisos';
-import { Bell, X, CheckCheck, Package, Loader2, ImageIcon, Inbox } from 'lucide-react';
+import { Bell, X, CheckCheck, Package, Loader2, Inbox, Video, FileText } from 'lucide-react';
 
 const fechaCorta = (valor) => {
   if (!valor) return '';
@@ -34,7 +34,7 @@ export default function PanelNotificaciones({
 }) {
   const { darkMode } = useTheme();
   const navigate = useNavigate();
-  const { avisos, urls, cargando, error, marcarLeida, marcarTodas } = useAvisos();
+  const { avisos, cargando, error, marcarLeida, marcarTodas } = useAvisos();
   const [abierto, setAbierto] = useState(false);
   const contenedorRef = useRef(null);
 
@@ -171,23 +171,33 @@ export default function PanelNotificaciones({
                     {aviso.estado_producto}
                   </p>
                 )}
-                {aviso.fotos_observaciones?.length > 0 && (
+                {aviso.videos?.length > 0 && (
                   <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                     <span className={`flex items-center gap-1 text-[10px] font-bold ${suave}`}>
-                      <ImageIcon size={11} /> {aviso.fotos_observaciones.length} foto
-                      {aviso.fotos_observaciones.length === 1 ? '' : 's'}
+                      <Video size={11} /> {aviso.videos.length} video(s)
                     </span>
-                    {aviso.fotos_observaciones.map((ruta) => (
-                      <img
-                        key={ruta}
-                        src={urls[ruta] || ''}
-                        alt="Foto del reporte"
-                        className={`h-9 w-9 rounded-lg object-cover border ${borde} ${
-                          urls[ruta] ? '' : 'hidden'
-                        }`}
-                      />
+                    {aviso.videos.map((url, idx) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 rounded-lg bg-blue-500/15 px-2 py-1 text-[10px] font-bold text-blue-600 transition hover:bg-blue-500/25"
+                      >
+                        <Video size={10} /> Video {idx + 1}
+                      </a>
                     ))}
                   </div>
+                )}
+                {aviso.documento_url && (
+                  <a
+                    href={aviso.documento_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-2.5 py-1 text-[10px] font-bold text-amber-600 transition hover:bg-amber-500/25"
+                  >
+                    <FileText size={10} /> Ver documento
+                  </a>
                 )}
               </button>
             ))}

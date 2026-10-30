@@ -22,6 +22,7 @@ const PanelPrincipal = lazy(() => import('../modules/panel/PanelPrincipal'));
 const RegistroActividad = lazy(() => import('../modules/admin/RegistroActividad'));
 const PlanillaSemanal = lazy(() => import('../modules/superadmin/PlanillaSemanal'));
 const GestionRevisionesDueno = lazy(() => import('../modules/admin/GestionRevisionesDueno'));
+const ReporteRosticero = lazy(() => import('../modules/rosticero/ReporteRosticero'));
 
 function CargandoRuta() {
   return (
@@ -187,7 +188,7 @@ export default function AppRouter() {
         <Route
           path="/planilla"
           element={
-            <ProtectedRoute rolesPermitidos={['superadmin']}>
+            <ProtectedRoute rolesPermitidos={['superadministrador']}>
               <PlanillaSemanal />
             </ProtectedRoute>
           }
@@ -196,11 +197,20 @@ export default function AppRouter() {
         <Route
           path="/revisiones-dueno"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador', 'superadmin']}>
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador', 'ayudante']}>
               <GestionRevisionesDueno />
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/rosticero"
+          element={
+            <ProtectedRoute rolesPermitidos={['rosticero', 'administrador', 'superadministrador']}>
+              <ReporteRosticero />
+            </ProtectedRoute>
+          }
+        />
+
       </Routes>
       </Suspense>
     </BrowserRouter>

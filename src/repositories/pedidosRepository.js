@@ -125,7 +125,7 @@ export const pedidosRepository = {
     }
 
     // El reporte de entrega vive en su propia tabla y tiene RLS: el
-    // superadmin no lo ve aunque pida el pedido. Si el SQL todavia no
+    // superadministrador no lo ve aunque pida el pedido. Si el SQL todavia no
     // se corrio, la lista sigue funcionando sin el reporte.
     const { data: reportes } = await supabase
       .from('pedido_reportes_entrega')

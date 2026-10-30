@@ -11,9 +11,6 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    // sessionStorage (no localStorage) para que cada pestaña tenga su
-    // propia sesión: así se puede entrar con otro usuario en otra
-    // pestaña sin que se pisen entre sí.
     storage: window.sessionStorage,
   },
 });

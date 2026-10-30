@@ -327,8 +327,8 @@ export default function DashboardAdmin() {
       <div className={`flex flex-col md:flex-row justify-between items-start md:items-center p-6 rounded-2xl shadow-xl mb-8 gap-4 border transition-colors duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'}`}>
         <div>
           <div className="flex items-center gap-2 text-amber-500 font-semibold text-xs uppercase tracking-wider mb-1">
-            {perfil?.roles?.nombre === 'superadmin' ? <Crown size={16} /> : <ShieldCheck size={16} />}
-            {perfil?.roles?.nombre === 'superadmin'
+            {perfil?.roles?.nombre === 'superadministrador' ? <Crown size={16} /> : <ShieldCheck size={16} />}
+            {perfil?.roles?.nombre === 'superadministrador'
               ? 'Panel exclusivo de Superadmin'
               : 'Panel de Control Administrativo'}
           </div>

@@ -4,10 +4,10 @@ import { authRepository } from '../repositories/AuthRepository';
 import { useMemo } from 'react';
 
 /**
- * En las rutas que el superadmin puede abrir (por ejemplo el
+ * En las rutas que el superadministrador puede abrir (por ejemplo el
  * panel), queda como administrador y asi puede ver lo mismo.
  * Con excluirSuperadmin la ruta es solo del administrador: el
- * superadmin vuelve al panel principal.
+ * superadministrador vuelve al panel principal.
  */
 export default function ProtectedRoute({ children, rolesPermitidos, excluirSuperadmin }) {
   const { usuario, perfil, perfilError, cargando, sesionExpirada } = useAuth();
@@ -65,7 +65,7 @@ export default function ProtectedRoute({ children, rolesPermitidos, excluirSuper
   }
 
   const rolActual = perfil.roles?.nombre;
-  const esAdminPermitido = rolActual === 'superadmin'
+  const esAdminPermitido = rolActual === 'superadministrador'
     && !excluirSuperadmin
     && rolesPermitidos?.includes('administrador');
 

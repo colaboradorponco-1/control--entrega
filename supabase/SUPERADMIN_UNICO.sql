@@ -1,7 +1,16 @@
 BEGIN;
 
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.roles WHERE nombre = 'superadmin') THEN
+    RAISE EXCEPTION
+      'Ejecuta supabase/RENOMBRAR_SUPERADMINISTRADOR.sql antes de esta migracion.';
+  END IF;
+END;
+$$;
+
 INSERT INTO public.roles (nombre)
-VALUES ('superadmin')
+VALUES ('superadministrador')
 ON CONFLICT (nombre) DO NOTHING;
 
 DO $$
@@ -12,11 +21,11 @@ BEGIN
     INTO v_cantidad
     FROM public.perfiles_usuario p
     JOIN public.roles r ON r.id = p.rol_id
-   WHERE r.nombre = 'superadmin';
+   WHERE r.nombre = 'superadministrador';
 
   IF v_cantidad > 1 THEN
     RAISE EXCEPTION
-      'Ya existen % usuarios con rol superadmin. Deja solo uno antes de volver a ejecutar esta migracion.',
+      'Ya existen % usuarios con rol superadministrador. Deja solo uno antes de volver a ejecutar esta migracion.',
       v_cantidad;
   END IF;
 END;
@@ -34,7 +43,7 @@ BEGIN
   SELECT id
     INTO v_rol_superadmin
     FROM public.roles
-   WHERE nombre = 'superadmin';
+   WHERE nombre = 'superadministrador';
 
   IF NEW.rol_id IS DISTINCT FROM v_rol_superadmin THEN
     RETURN NEW;
@@ -48,7 +57,7 @@ BEGIN
      WHERE p.rol_id = v_rol_superadmin
        AND p.id IS DISTINCT FROM NEW.id
   ) THEN
-    RAISE EXCEPTION 'Solo puede haber un usuario con rol superadmin.'
+    RAISE EXCEPTION 'Solo puede haber un usuario con rol superadministrador.'
       USING ERRCODE = '23505';
   END IF;
 
@@ -72,7 +81,7 @@ STABLE
 SET search_path = public, pg_temp
 AS $$
   SELECT CASE
-           WHEN r.nombre = 'superadmin' THEN 'administrador'
+           WHEN r.nombre = 'superadministrador' THEN 'administrador'
            ELSE r.nombre
          END
     FROM public.perfiles_usuario p
@@ -93,7 +102,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = auth.uid()
-       AND r.nombre = 'superadmin'
+       AND r.nombre = 'superadministrador'
   );
 $$;
 
@@ -110,7 +119,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = p_usuario_id
-       AND r.nombre IN ('administrador', 'superadmin')
+       AND r.nombre IN ('administrador', 'superadministrador')
   );
 $$;
 
@@ -137,7 +146,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.roles
      WHERE id = NEW.rol_id
-       AND nombre IN ('administrador', 'superadmin')
+       AND nombre IN ('administrador', 'superadministrador')
   ) INTO v_nuevo_privilegiado;
 
   IF TG_OP = 'INSERT' THEN
@@ -151,7 +160,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.roles
      WHERE id = OLD.rol_id
-       AND nombre IN ('administrador', 'superadmin')
+       AND nombre IN ('administrador', 'superadministrador')
   ) INTO v_anterior_privilegiado;
 
   IF NEW.rol_id IS DISTINCT FROM OLD.rol_id

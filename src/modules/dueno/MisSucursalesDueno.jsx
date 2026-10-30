@@ -114,7 +114,7 @@ export default function MisSucursalesDueno() {
   // Conteo de archivados para el badge del botón
   const [totalArchivados, setTotalArchivados] = useState(0);
 
-  // ─── Revisiones y Multas (notificaciones del admin/superadmin) ───────────────
+  // ─── Revisiones y Multas (notificaciones del admin/superadministrador) ──────
   const [duenoId, setDuenoId] = useState(undefined);
   const [revisiones, setRevisiones] = useState([]);
   const [cargandoRevisiones, setCargandoRevisiones] = useState(false);

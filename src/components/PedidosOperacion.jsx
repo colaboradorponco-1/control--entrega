@@ -94,7 +94,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
   }, [cargar]);
 
   useEffect(() => {
-    if (!['operador_planta', 'administrador', 'superadmin'].includes(perfil?.roles?.nombre)) return undefined;
+    if (!['operador_planta', 'administrador', 'superadministrador'].includes(perfil?.roles?.nombre)) return undefined;
 
     let vigente = true;
     const actualizarDisponibilidad = async () => {
@@ -286,7 +286,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
   );
 
   const pendientesAccion = pedidos.filter((p) => acciones.some((a) => a.estado === p.estado)).length;
-  const puedeVerInventario = ['operador_planta', 'administrador', 'superadmin'].includes(perfil?.roles?.nombre);
+  const puedeVerInventario = ['operador_planta', 'administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
 
   const actualizarInventario = async () => {
     try {

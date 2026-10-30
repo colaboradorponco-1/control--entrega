@@ -4,7 +4,7 @@
 --  El reporte de entrega (estado del pollo, observaciones y
 --  fotos) es informacion reservada del ADMINISTRADOR. Antes
 --  vivia en public.pedido_recepciones y, como RLS trabaja por
---  fila y no por columna, el superadmin podia leer esas
+--  fila y no por columna, el superadministrador podia leer esas
 --  columnas por la API igual que el administrador.
 --
 --  Aqui el reporte se muda a su propia tabla:
@@ -13,15 +13,15 @@
 --      - la escribe solo la RPC de envio (SECURITY DEFINER)
 --      - la leen el administrador, la sucursal del pedido y el
 --        dueno de esa sucursal
---      - el superadmin queda afuera, sin excepciones
+--      - el superadministrador queda afuera, sin excepciones
 --
 --  1) Helper get_user_rol_exacto(): el rol real, sin el mapeo
---     de get_user_rol() (que convierte superadmin en administrador)
+--     de get_user_rol() (que convierte superadministrador en administrador)
 --  2) Tabla public.pedido_reportes_entrega con RLS
 --  3) Se pasa a la tabla nueva lo que ya habia
 --  4) RPC nueva: enviar_observaciones_entrega_pedido
 --  5) Se borran del pedido_recepciones las columnas del reporte
---  6) Politicas del bucket: el superadmin no descarga las fotos
+--  6) Politicas del bucket: el superadministrador no descarga las fotos
 --     del reporte
 --
 --  Requiere:
@@ -60,7 +60,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_user_rol_exacto() TO authenticated;
 
 -- Helper del administrador: TRUE solo para el rol 'administrador'
--- (el superadmin tiene rol 'superadmin', asi que queda fuera). Se
+-- (el superadministrador tiene rol 'superadministrador', asi que queda fuera). Se
 -- define aqui para que el script no dependa del orden.
 CREATE OR REPLACE FUNCTION public.get_user_es_admin()
 RETURNS BOOLEAN
@@ -102,8 +102,8 @@ CREATE INDEX IF NOT EXISTS idx_pedido_reportes_entrega_sucursal
 ALTER TABLE public.pedido_reportes_entrega ENABLE ROW LEVEL SECURITY;
 
 -- Lectura: el administrador, la sucursal del pedido y el dueno de
--- esa sucursal. El superadmin no entra por ningun lado: su rol se
--- llama 'superadmin' y get_user_es_admin() solo es TRUE para
+-- esa sucursal. El superadministrador no entra por ningun lado: su rol se
+-- llama 'superadministrador' y get_user_es_admin() solo es TRUE para
 -- 'administrador'.
 DROP POLICY IF EXISTS reportes_entrega_leer ON public.pedido_reportes_entrega;
 CREATE POLICY reportes_entrega_leer ON public.pedido_reportes_entrega
@@ -126,7 +126,7 @@ GRANT SELECT ON public.pedido_reportes_entrega TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE public.pedido_reportes_entrega_id_seq TO authenticated;
 
 COMMENT ON TABLE public.pedido_reportes_entrega IS
-  'Reporte de entrega de cada pedido. Lo lee el administrador, la sucursal del pedido y el dueno de esa sucursal; el superadmin no.';
+  'Reporte de entrega de cada pedido. Lo lee el administrador, la sucursal del pedido y el dueno de esa sucursal; el superadministrador no.';
 
 -- ------------------------------------------------------------
 -- 3) Lo que ya habia en pedido_recepciones pasa a la tabla nueva
@@ -307,7 +307,7 @@ BEGIN
    WHERE s.id = v_sucursal_id;
 
   -- El aviso va a cada administrador activo. El superadmin no entra
-  -- porque su rol se llama 'superadmin', no 'administrador'.
+  -- porque su rol se llama 'superadministrador', no 'administrador'.
   INSERT INTO public.notificaciones (
     tipo, titulo, mensaje, pedido_id, sucursal_id, sucursal_nombre,
     estado_producto, observaciones_entrega, fotos_observaciones,
@@ -365,7 +365,7 @@ CREATE POLICY evidencias_ver ON storage.objects
     bucket_id = 'evidencias'
     AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal')
     AND (
-      public.get_user_rol_exacto() <> 'superadmin'
+      public.get_user_rol_exacto() <> 'superadministrador'
       OR storage.objects.name NOT LIKE '%/observaciones/%'
     )
   );
@@ -375,17 +375,17 @@ CREATE POLICY evidencias_administrar ON storage.objects
   FOR ALL TO authenticated
   USING (
     bucket_id = 'evidencias'
-    AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal', 'superadmin')
+    AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal', 'superadministrador')
     AND (
-      public.get_user_rol_exacto() <> 'superadmin'
+      public.get_user_rol_exacto() <> 'superadministrador'
       OR storage.objects.name NOT LIKE '%/observaciones/%'
     )
   )
   WITH CHECK (
     bucket_id = 'evidencias'
-    AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal', 'superadmin')
+    AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal', 'superadministrador')
     AND (
-      public.get_user_rol_exacto() <> 'superadmin'
+      public.get_user_rol_exacto() <> 'superadministrador'
       OR storage.objects.name NOT LIKE '%/observaciones/%'
     )
   );

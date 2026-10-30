@@ -137,6 +137,29 @@ export default function PedidosSucursal() {
   const [reporteAbierto, setReporteAbierto] = useState(null);
   const [aprobandoPedido, setAprobandoPedido] = useState(null);
   const [pedidoAConfirmar, setPedidoAConfirmar] = useState(null);
+  const [inventarioSucursal, setInventarioSucursal] = useState(null);
+
+  useEffect(() => {
+    if (!perfil?.sucursal_id) return;
+    const cargar = async () => {
+      try {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const { data } = await supabase
+          .from('inventario_sucursal')
+          .select('*')
+          .eq('sucursal_id', perfil.sucursal_id)
+          .eq('fecha', hoy)
+          .maybeSingle();
+        setInventarioSucursal(data);
+      } catch (e) {
+        console.error('Error cargando inventario:', e);
+      }
+    };
+    cargar();
+  }, [perfil?.sucursal_id]);
+  const [mostrarEmergencia, setMostrarEmergencia] = useState(false);
+  const [enviandoEmergencia, setEnviandoEmergencia] = useState(false);
+  const [formEmergencia, setFormEmergencia] = useState({ unidades: '', observaciones: '' });
   const [rechazando, setRechazando] = useState(null);
   const [fotosRechazo, setFotosRechazo] = useState([]);
   const [motivoRechazo, setMotivoRechazo] = useState('');
@@ -184,9 +207,9 @@ export default function PedidosSucursal() {
           : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
     }`;
   const esSucursal = perfil?.roles?.nombre === 'sucursal';
-  const esVistaAdmin = ['administrador', 'superadmin'].includes(perfil?.roles?.nombre);
-  const esAdmin = ['administrador', 'superadmin'].includes(perfil?.roles?.nombre);
-  // El reporte de entrega es del administrador: el superadmin no lo ve.
+  const esVistaAdmin = ['administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
+  const esAdmin = ['administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
+  // El reporte de entrega es del administrador: el superadministrador no lo ve.
   const esAdminReporte = perfil?.roles?.nombre === 'administrador';
 
   const cargar = useCallback(async ({ silencioso = false } = {}) => {
@@ -527,6 +550,36 @@ export default function PedidosSucursal() {
     }
   };
 
+  const handlePedidoEmergencia = async (e) => {
+    e.preventDefault();
+    if (!perfil?.sucursal_id) {
+      setMensaje({ tipo: 'error', texto: 'No se pudo identificar tu sucursal.' });
+      return;
+    }
+    const unidades = Number(formEmergencia.unidades);
+    if (!Number.isInteger(unidades) || unidades <= 0) {
+      setMensaje({ tipo: 'error', texto: 'Ingresa una cantidad válida de unidades.' });
+      return;
+    }
+    try {
+      setEnviandoEmergencia(true);
+      const { data, error } = await supabase.rpc('crear_pedido_emergencia', {
+        p_sucursal_id: perfil.sucursal_id,
+        p_unidades: unidades,
+        p_observaciones: formEmergencia.observaciones.trim() || 'PEDIDO DE EMERGENCIA',
+      });
+      if (error) throw error;
+      setMensaje({ tipo: 'exito', texto: `Pedido de emergencia #${data} creado. El dueño y el admin fueron notificados.` });
+      setMostrarEmergencia(false);
+      setFormEmergencia({ unidades: '', observaciones: '' });
+      await cargar({ silencioso: true });
+    } catch (err) {
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo crear el pedido de emergencia' });
+    } finally {
+      setEnviandoEmergencia(false);
+    }
+  };
+
   // Rechazar un pedido: se pide el motivo, porque la sucursal puede
   // rechazar por motivos que el administrador necesita ver.
   const abrirRechazo = (p) => {
@@ -845,7 +898,7 @@ export default function PedidosSucursal() {
   };
 
   const aprobarPedido = async (pedido) => {
-    if (!['administrador', 'superadmin'].includes(perfil?.roles?.nombre)) {
+    if (!['administrador', 'superadministrador'].includes(perfil?.roles?.nombre)) {
       setMensaje({ tipo: 'error', texto: 'Solo un administrador puede aprobar pedidos.' });
       return;
     }
@@ -942,7 +995,7 @@ export default function PedidosSucursal() {
     const Icono = est.icon;
     const recepcion = p.pedido_recepciones?.[0];
     // El reporte de entrega viene en su propia tabla (con RLS): el
-    // superadmin no lo recibe.
+    // superadministrador no lo recibe.
     const reporte = p.reporte_entrega;
     const pasoActual = PASOS_SEGUIMIENTO.findIndex((paso) => paso.estado === p.estado);
     const progreso = pasoActual < 0 ? 0 : (pasoActual / (PASOS_SEGUIMIENTO.length - 1)) * 100;
@@ -1860,6 +1913,22 @@ export default function PedidosSucursal() {
               </div>
             )}
 
+            {inventarioSucursal && (
+              <div className={`mb-4 rounded-xl border p-3 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'}`}>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted} mb-2`}>Mi inventario (hoy)</p>
+                <div className="flex gap-4">
+                  <div className={`flex-1 rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                    <p className={`text-[9px] ${muted}`}>Crudos</p>
+                    <p className={`text-sm font-bold ${strong}`}>{inventarioSucursal.pollos_crudos}</p>
+                  </div>
+                  <div className={`flex-1 rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                    <p className={`text-[9px] ${muted}`}>Rostizados</p>
+                    <p className={`text-sm font-bold ${strong}`}>{inventarioSucursal.pollos_rostizados}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <section>
               <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
                 <h2 className={`text-xs font-bold uppercase tracking-wider ${muted}`}>
@@ -1951,6 +2020,16 @@ export default function PedidosSucursal() {
                     </button>
                   </div>
                 )}
+                {esSucursal && (
+                  <div className="mb-3">
+                    <button
+                      onClick={() => setMostrarEmergencia(true)}
+                      className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-red-700"
+                    >
+                      🚨 Pedido de emergencia
+                    </button>
+                  </div>
+                )}
                 <div className="space-y-2.5">{activosFiltrados.map(renderPedido)}</div>
                 </>
               )}
@@ -1960,6 +2039,76 @@ export default function PedidosSucursal() {
           </>
         )}
       </main>
+
+      {/* Modal de pedido de emergencia */}
+      {mostrarEmergencia && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <form
+            onSubmit={handlePedidoEmergencia}
+            className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${card}`}
+          >
+            <div className="flex items-start gap-3">
+              <span className="p-2.5 rounded-xl border bg-red-500/10 text-red-500 border-red-500/20 shrink-0">
+                🚨
+              </span>
+              <div className="min-w-0">
+                <h3 className={`text-base font-black ${strong}`}>
+                  Pedido de emergencia
+                </h3>
+                <p className={`mt-1 text-xs ${muted}`}>
+                  Crea un pedido urgente para tu sucursal. El dueño y el admin serán notificados.
+                </p>
+              </div>
+            </div>
+
+            <label className={`mt-4 block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
+              Unidades *
+            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              required
+              value={formEmergencia.unidades}
+              onChange={(e) => setFormEmergencia({ ...formEmergencia, unidades: e.target.value })}
+              className={`w-full px-4 py-3 border rounded-xl text-sm outline-none focus:ring-2 transition ${input}`}
+              placeholder="Cantidad de unidades"
+            />
+
+            <label className={`mt-3 block text-xs font-semibold uppercase tracking-wider mb-2 ${label}`}>
+              Motivo de emergencia
+            </label>
+            <textarea
+              value={formEmergencia.observaciones}
+              onChange={(e) => setFormEmergencia({ ...formEmergencia, observaciones: e.target.value })}
+              rows={3}
+              placeholder="Describe la emergencia..."
+              className={`w-full px-4 py-3 border rounded-xl text-sm outline-none focus:ring-2 transition ${input}`}
+            />
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setMostrarEmergencia(false); setFormEmergencia({ unidades: '', observaciones: '' }); }}
+                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold border transition ${
+                  darkMode
+                    ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                    : 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={enviandoEmergencia}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-red-600 hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {enviandoEmergencia ? 'Enviando...' : 'Crear emergencia'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* La recepción ya no usa modal: el formulario va dentro de
           la tarjeta del pedido, en PedidosSucursal (renderPedido). */}

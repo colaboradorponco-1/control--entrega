@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, ImageIcon, Package, PackageCheck, PackageX, Truck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ImageIcon, Package, PackageCheck, PackageX, Truck, Video, FileText } from 'lucide-react';
 
 export const ETIQUETA_ESTADO_PRODUCTO = {
   FRESCO: 'Fresco y refrigerado',
@@ -111,6 +111,26 @@ export default function TarjetaAviso({
         <p className={`mt-2 text-sm ${texto}`}>{aviso.mensaje}</p>
       )}
 
+      {(aviso.area_atencion_cliente || aviso.area_personal || aviso.area_comida || aviso.area_limpieza || aviso.area_infraestructura) && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {aviso.area_atencion_cliente && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/10 text-blue-500">Atención al cliente</span>
+          )}
+          {aviso.area_personal && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500/10 text-purple-500">Personal</span>
+          )}
+          {aviso.area_comida && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-500">Comida</span>
+          )}
+          {aviso.area_limpieza && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-500">Limpieza</span>
+          )}
+          {aviso.area_infraestructura && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-500/10 text-gray-500">Infraestructura</span>
+          )}
+        </div>
+      )}
+
       {aviso.unidades_recibidas != null && (
         <div className={`mt-2 flex flex-wrap items-center gap-2 rounded-lg ${suave} px-3 py-2`}>
           <AlertTriangle size={14} className="text-amber-500" />
@@ -165,6 +185,7 @@ export default function TarjetaAviso({
           ))}
           {aviso.foto_url && (
             <button
+              key={aviso.foto_url}
               type="button"
               onClick={() => onVerFoto?.(urls[aviso.foto_url] || null, aviso.foto_url)}
               className={`h-12 w-12 overflow-hidden rounded-lg border ${borde} ${urls[aviso.foto_url] ? '' : 'hidden'}`}
@@ -175,6 +196,38 @@ export default function TarjetaAviso({
               )}
             </button>
           )}
+        </div>
+      )}
+
+      {aviso.videos?.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <span className={`flex items-center gap-1 text-[10px] font-bold ${tenue}`}>
+            <Video size={11} /> Videos
+          </span>
+          {aviso.videos.map((url, idx) => (
+            <a
+              key={url}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 rounded-lg bg-blue-500/15 px-2.5 py-1.5 text-[10px] font-bold text-blue-600 transition hover:bg-blue-500/25"
+            >
+              <Video size={11} /> Video {idx + 1}
+            </a>
+          ))}
+        </div>
+      )}
+
+      {aviso.documento_url && (
+        <div className="mt-2.5">
+          <a
+            href={aviso.documento_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[10px] font-bold text-amber-600 transition hover:bg-amber-500/25"
+          >
+            <FileText size={11} /> Ver documento
+          </a>
         </div>
       )}
 

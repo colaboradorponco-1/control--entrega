@@ -28,9 +28,9 @@ CREATE POLICY evidencias_ver ON storage.objects
   FOR SELECT TO authenticated
   USING (
     bucket_id = 'evidencias'
-    AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal', 'superadmin')
+    AND public.get_user_rol_exacto() IN ('administrador', 'operador_planta', 'despachador', 'sucursal', 'superadministrador')
     AND (
-      public.get_user_rol_exacto() <> 'superadmin'
+      public.get_user_rol_exacto() <> 'superadministrador'
       OR storage.objects.name NOT LIKE '%/observaciones/%'
     )
   );
@@ -91,7 +91,7 @@ BEGIN
       RAISE EXCEPTION 'No tienes permiso para ver esa evidencia';
     END IF;
 
-  ELSIF v_rol_exacto = 'superadmin' THEN
+  ELSIF v_rol_exacto = 'superadministrador' THEN
   
     IF p_ruta LIKE '%/observaciones/%' THEN
       RAISE EXCEPTION 'No tienes permiso para ver esa evidencia';

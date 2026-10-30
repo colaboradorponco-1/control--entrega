@@ -31,7 +31,7 @@ CREATE POLICY revisiones_dueno_read ON public.revisiones_dueno
     OR EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadmin'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
     )
   );
 
@@ -42,7 +42,7 @@ CREATE POLICY revisiones_dueno_insert ON public.revisiones_dueno
     EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadmin'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
     )
   );
 
@@ -53,7 +53,7 @@ CREATE POLICY revisiones_dueno_update ON public.revisiones_dueno
     EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadmin'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
     )
     OR dueno_id IN (SELECT dueno_id FROM public.perfiles_usuario WHERE usuario_id = auth.uid())
   );

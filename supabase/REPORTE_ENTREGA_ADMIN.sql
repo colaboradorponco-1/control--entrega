@@ -52,7 +52,7 @@ CREATE POLICY notificaciones_update ON public.notificaciones
 GRANT SELECT, UPDATE ON public.notificaciones TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE public.notificaciones_id_seq TO authenticated;
 COMMENT ON TABLE public.notificaciones IS
-  'Avisos de la administracion. El reporte de entrega de la sucursal se guarda aqui solo para el rol administrador, no para el superadmin.';
+  'Avisos de la administracion. El reporte de entrega de la sucursal se guarda aqui solo para el rol administrador, no para el superadministrador.';
 
 DO $$
 BEGIN
@@ -213,7 +213,7 @@ BEGIN
    WHERE pu.usuario_id = auth.uid();
 
   -- El aviso va a cada administrador activo. El superadmin no entra
-  -- porque su rol se llama 'superadmin', no 'administrador'.
+  -- porque su rol se llama 'superadministrador', no 'administrador'.
   INSERT INTO public.notificaciones (
     tipo, titulo, mensaje, pedido_id, sucursal_id, sucursal_nombre,
     estado_producto, observaciones_entrega, fotos_observaciones,
