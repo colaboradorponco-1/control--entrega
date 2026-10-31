@@ -39,6 +39,11 @@ DECLARE
   v_nombre TEXT;
   v_usuario_id UUID;
 BEGIN
+  IF NOT public.get_user_es_superadmin() THEN
+    RAISE EXCEPTION 'Solo el superadministrador puede crear revisiones y multas.'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT nombre_completo INTO v_nombre
   FROM public.perfiles_usuario WHERE usuario_id = auth.uid();
 

@@ -1,7 +1,8 @@
-export default function CeldaNumero({ valor, onCambiar, onGuardar, oscuro = false, decimales = true }) {
+export default function CeldaNumero({ valor, onCambiar, onGuardar, oscuro = false, decimales = true, disabled = false }) {
   return (
     <input
       type="number"
+      disabled={disabled}
       min="0"
       step={decimales ? '0.01' : '1'}
       value={valor ?? ''}
@@ -10,7 +11,7 @@ export default function CeldaNumero({ valor, onCambiar, onGuardar, oscuro = fals
       onKeyDown={(evento) => {
         if (evento.key === 'Enter') evento.currentTarget.blur();
       }}
-      className={`w-20 rounded-md border px-1.5 py-1 text-right text-xs tabular-nums outline-none focus:border-cyan-500 ${
+      className={`w-20 rounded-md border px-1.5 py-1 text-right text-xs tabular-nums outline-none focus:border-cyan-500 disabled:cursor-not-allowed disabled:opacity-50 ${
         oscuro
           ? 'border-slate-700 bg-slate-900 text-slate-100'
           : 'border-gray-300 bg-white text-gray-800'

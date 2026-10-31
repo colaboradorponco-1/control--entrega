@@ -14,6 +14,7 @@ const PedidosDespachador = lazy(() => import('../modules/despacho/PedidosDespach
 const MisSucursalesDueno = lazy(() => import('../modules/dueno/MisSucursalesDueno'));
 const BandejaAvisosDueno = lazy(() => import('../modules/dueno/BandejaAvisosDueno'));
 const GestionDuenos = lazy(() => import('../modules/admin/GestionDuenos'));
+const GestionProveedores = lazy(() => import('../modules/admin/GestionProveedores'));
 const GestionRutas = lazy(() => import('../modules/admin/GestionRutas'));
 const BandejaAvisos = lazy(() => import('../modules/admin/BandejaAvisos'));
 const RecuperarContrasena = lazy(() => import('../modules/auth/RecuperarContrasena'));
@@ -21,6 +22,7 @@ const NuevaContrasena = lazy(() => import('../modules/auth/NuevaContrasena'));
 const PanelPrincipal = lazy(() => import('../modules/panel/PanelPrincipal'));
 const RegistroActividad = lazy(() => import('../modules/admin/RegistroActividad'));
 const PlanillaSemanal = lazy(() => import('../modules/superadmin/PlanillaSemanal'));
+const CapturaPlanilla = lazy(() => import('../modules/superadmin/CapturaPlanilla'));
 const GestionRevisionesDueno = lazy(() => import('../modules/admin/GestionRevisionesDueno'));
 const ReporteRosticero = lazy(() => import('../modules/rosticero/ReporteRosticero'));
 
@@ -80,7 +82,7 @@ export default function AppRouter() {
         <Route
           path="/sucursal"
           element={
-            <ProtectedRoute rolesPermitidos={['sucursal', 'administrador']}>
+            <ProtectedRoute rolesPermitidos={['sucursal', 'administrador', 'superadministrador']}>
               <PedidosSucursal />
             </ProtectedRoute>
           }
@@ -97,7 +99,7 @@ export default function AppRouter() {
         <Route
           path="/admin"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
               <DashboardAdmin />
             </ProtectedRoute>
           }
@@ -106,7 +108,7 @@ export default function AppRouter() {
         <Route
           path="/usuarios"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
               <GestionUsuarios />
             </ProtectedRoute>
           }
@@ -115,7 +117,7 @@ export default function AppRouter() {
         <Route
           path="/avisos"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']} excluirSuperadmin>
+            <ProtectedRoute rolesPermitidos={['administrador']}>
               <BandejaAvisos />
             </ProtectedRoute>
           }
@@ -124,7 +126,7 @@ export default function AppRouter() {
         <Route
           path="/sucursales"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
               <GestionSucursales />
             </ProtectedRoute>
           }
@@ -133,8 +135,17 @@ export default function AppRouter() {
         <Route
           path="/duenos"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
               <GestionDuenos />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/proveedores"
+          element={
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
+              <GestionProveedores />
             </ProtectedRoute>
           }
         />
@@ -142,7 +153,7 @@ export default function AppRouter() {
         <Route
           path="/rutas"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['superadministrador']}>
               <GestionRutas />
             </ProtectedRoute>
           }
@@ -179,7 +190,7 @@ export default function AppRouter() {
         <Route
           path="/auditoria"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
               <RegistroActividad />
             </ProtectedRoute>
           }
@@ -193,11 +204,19 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/planilla/captura"
+          element={
+            <ProtectedRoute rolesPermitidos={['superadministrador']}>
+              <CapturaPlanilla />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/revisiones-dueno"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador', 'ayudante']}>
+            <ProtectedRoute rolesPermitidos={['superadministrador']}>
               <GestionRevisionesDueno />
             </ProtectedRoute>
           }

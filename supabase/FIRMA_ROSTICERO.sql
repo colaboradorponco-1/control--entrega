@@ -30,6 +30,17 @@ DECLARE
   v_id BIGINT;
   v_nombre TEXT;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.perfiles_usuario pu
+      JOIN public.roles r ON r.id = pu.rol_id
+     WHERE pu.usuario_id = auth.uid()
+       AND r.nombre = 'rosticero'
+  ) THEN
+    RAISE EXCEPTION 'Solo el rol rosticero puede registrar reportes.'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT nombre_completo INTO v_nombre
   FROM public.perfiles_usuario WHERE usuario_id = auth.uid();
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../config/supabaseClient';
 import { useTheme } from '../../context/ThemeContext';
-import { RefreshCw, Search, Table, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Search, Table, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 const COLOR_ACCION = {
   INSERT: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
@@ -33,6 +34,7 @@ const formatearJson = (valor) => {
 
 export default function RegistroActividad() {
   const { darkMode } = useTheme();
+  const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -96,14 +98,23 @@ export default function RegistroActividad() {
         <h1 className={`flex items-center gap-3 text-2xl font-bold ${strong}`}>
           <Table className="text-emerald-500" /> Registro de Actividad
         </h1>
-        <button
-          onClick={cargarLogs}
-          disabled={cargando}
-          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:opacity-60 ${card} ${muted} hover:opacity-80`}
-        >
-          <RefreshCw size={16} className={cargando ? 'animate-spin' : ''} />
-          Actualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/panel')}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${card} ${muted} hover:opacity-80`}
+          >
+            <ArrowLeft size={16} /> Volver al panel
+          </button>
+          <button
+            onClick={cargarLogs}
+            disabled={cargando}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:opacity-60 ${card} ${muted} hover:opacity-80`}
+          >
+            <RefreshCw size={16} className={cargando ? 'animate-spin' : ''} />
+            Actualizar
+          </button>
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-3">

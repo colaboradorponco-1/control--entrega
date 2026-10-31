@@ -26,7 +26,7 @@ DROP POLICY IF EXISTS rutas_read ON public.rutas;
 CREATE POLICY rutas_read ON public.rutas
   FOR SELECT TO authenticated
   USING (
-    public.get_user_rol() = 'administrador'
+    public.get_user_es_superadmin()
     OR repartidor_id = (
       SELECT p.id FROM public.perfiles_usuario p WHERE p.usuario_id = auth.uid()
     )
@@ -34,14 +34,14 @@ CREATE POLICY rutas_read ON public.rutas
 DROP POLICY IF EXISTS rutas_admin ON public.rutas;
 CREATE POLICY rutas_admin ON public.rutas
   FOR ALL TO authenticated
-  USING (public.get_user_rol() = 'administrador')
-  WITH CHECK (public.get_user_rol() = 'administrador');
+  USING (public.get_user_es_superadmin())
+  WITH CHECK (public.get_user_es_superadmin());
 
 DROP POLICY IF EXISTS ruta_sucursales_read ON public.ruta_sucursales;
 CREATE POLICY ruta_sucursales_read ON public.ruta_sucursales
   FOR SELECT TO authenticated
   USING (
-    public.get_user_rol() = 'administrador'
+    public.get_user_es_superadmin()
     OR EXISTS (
       SELECT 1
         FROM public.rutas r
@@ -53,8 +53,8 @@ CREATE POLICY ruta_sucursales_read ON public.ruta_sucursales
 DROP POLICY IF EXISTS ruta_sucursales_admin ON public.ruta_sucursales;
 CREATE POLICY ruta_sucursales_admin ON public.ruta_sucursales
   FOR ALL TO authenticated
-  USING (public.get_user_rol() = 'administrador')
-  WITH CHECK (public.get_user_rol() = 'administrador');
+  USING (public.get_user_es_superadmin())
+  WITH CHECK (public.get_user_es_superadmin());
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.rutas TO authenticated;
 GRANT USAGE, SELECT ON SEQUENCE public.rutas_id_seq TO authenticated;
@@ -70,8 +70,8 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF public.get_user_rol() IS DISTINCT FROM 'administrador' THEN
-    RAISE EXCEPTION 'Solo un administrador puede modificar las paradas de una ruta';
+  IF NOT public.get_user_es_superadmin() THEN
+    RAISE EXCEPTION 'Solo el superadministrador puede modificar las paradas de una ruta';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM public.rutas WHERE id = p_ruta_id) THEN

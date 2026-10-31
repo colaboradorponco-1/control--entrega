@@ -1,5 +1,5 @@
 -- REVISIONES Y MULTAS PARA DUEÑOS
--- El superadministrador y el administrador crean revisiones/multas
+-- Solo el superadministrador crea revisiones/multas
 -- que llegan como notificación al dueño con un documento detallado.
 
 -- 1. Tabla de revisiones
@@ -31,7 +31,7 @@ CREATE POLICY revisiones_dueno_read ON public.revisiones_dueno
     OR EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre = 'superadministrador')
     )
   );
 
@@ -42,19 +42,19 @@ CREATE POLICY revisiones_dueno_insert ON public.revisiones_dueno
     EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre = 'superadministrador')
     )
   );
 
--- Solo admin/superadmin pueden actualizar
+-- El superadministrador administra; el dueño solo marca sus revisiones leídas.
 DROP POLICY IF EXISTS revisiones_dueno_update ON public.revisiones_dueno;
 CREATE POLICY revisiones_dueno_update ON public.revisiones_dueno
   FOR UPDATE USING (
-    EXISTS (
-      SELECT 1 FROM public.perfiles_usuario pu
-      WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
-    )
+    public.get_user_es_superadmin()
+    OR dueno_id IN (SELECT dueno_id FROM public.perfiles_usuario WHERE usuario_id = auth.uid())
+  )
+  WITH CHECK (
+    public.get_user_es_superadmin()
     OR dueno_id IN (SELECT dueno_id FROM public.perfiles_usuario WHERE usuario_id = auth.uid())
   );
 
@@ -76,6 +76,11 @@ DECLARE
   v_id BIGINT;
   v_nombre TEXT;
 BEGIN
+  IF NOT public.get_user_es_superadmin() THEN
+    RAISE EXCEPTION 'Solo el superadministrador puede crear revisiones y multas.'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT nombre_completo INTO v_nombre
   FROM public.perfiles_usuario WHERE usuario_id = auth.uid();
 
@@ -104,4 +109,17 @@ END;
 $$;
 
 -- 5. Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.revisiones_dueno;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime')
+     AND NOT EXISTS (
+       SELECT 1
+         FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = 'revisiones_dueno'
+     ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.revisiones_dueno;
+  END IF;
+END;
+$$;

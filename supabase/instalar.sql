@@ -31,7 +31,8 @@ CREATE TABLE public.sucursales (
 
 CREATE TABLE public.proveedores (
   id SERIAL PRIMARY KEY,
-  nombre TEXT NOT NULL
+  nombre TEXT NOT NULL,
+  activo BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE public.perfiles_usuario (

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../config/supabaseClient';
 import { authRepository } from '../../repositories/AuthRepository';
 import {
@@ -10,6 +11,7 @@ import {
 
 export default function ReporteRosticero() {
   const { darkMode, toggleTheme } = useTheme();
+  const { perfil } = useAuth();
   const navigate = useNavigate();
 
   const [reportes, setReportes] = useState([]);
@@ -46,6 +48,7 @@ export default function ReporteRosticero() {
   const muted = darkMode ? 'text-slate-400' : 'text-gray-500';
   const strong = darkMode ? 'text-white' : 'text-gray-900';
   const normal = darkMode ? 'text-slate-300' : 'text-gray-700';
+  const puedeGestionarReportes = perfil?.roles?.nombre === 'rosticero';
 
   const cargar = useCallback(async () => {
     try {
@@ -76,13 +79,17 @@ export default function ReporteRosticero() {
     }
   }, [verArchivados]);
 
-  useEffect(() => { cargar(); }, [cargar, verArchivados]);
+  useEffect(() => { cargar(); }, [cargar]);
 
   const totalPollosHornear = (Number(form.saldo_inicio_dia) || 0) + (Number(form.ingresos_dia) || 0);
   const pollosVendidos = totalPollosHornear - (Number(form.saldo_final_dia) || 0);
 
   const crearReporte = async (e) => {
     e.preventDefault();
+    if (!puedeGestionarReportes) {
+      setError('Solo el rol rosticero puede registrar reportes.');
+      return;
+    }
     if (!form.sucursal_id || !form.fecha) {
       setError('Selecciona sucursal y fecha.');
       return;
@@ -139,6 +146,10 @@ export default function ReporteRosticero() {
   };
 
   const archivarReporte = async (id, archivado) => {
+    if (!puedeGestionarReportes) {
+      setError('Solo el rol rosticero puede administrar reportes.');
+      return;
+    }
     try {
       setProcesandoId(id);
       await supabase.rpc('archivar_reporte_rosticero', {
@@ -155,6 +166,10 @@ export default function ReporteRosticero() {
   };
 
   const eliminarReporte = async (id) => {
+    if (!puedeGestionarReportes) {
+      setError('Solo el rol rosticero puede administrar reportes.');
+      return;
+    }
     if (!window.confirm('¿Eliminar definitivamente este reporte? Esta acción no se puede deshacer.')) return;
     try {
       setProcesandoId(id);
@@ -205,22 +220,26 @@ export default function ReporteRosticero() {
         <div className="flex items-center justify-between mb-6">
           <p className={`text-sm ${muted}`}>Reporte diario de pollos rostizados por sucursal.</p>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setVerArchivados((v) => !v)}
-              className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${input}`}
-            >
-              {verArchivados ? 'Ver activos' : 'Ver archivados'}
-            </button>
-            <button
-              onClick={() => setMostrarForm(true)}
-              className="flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700"
-            >
-              <Plus size={16} /> Nuevo reporte
-            </button>
+            {puedeGestionarReportes && (
+              <>
+                <button
+                  onClick={() => setVerArchivados((v) => !v)}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${input}`}
+                >
+                  {verArchivados ? 'Ver activos' : 'Ver archivados'}
+                </button>
+                <button
+                  onClick={() => setMostrarForm(true)}
+                  className="flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700"
+                >
+                  <Plus size={16} /> Nuevo reporte
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {mostrarForm && (
+        {puedeGestionarReportes && mostrarForm && (
           <div className={`mb-6 rounded-2xl border p-5 ${card}`}>
             <div className="flex items-center justify-between mb-4">
               <h2 className={`text-lg font-black ${strong}`}>Nuevo reporte diario</h2>
@@ -486,38 +505,40 @@ export default function ReporteRosticero() {
                       </a>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    {!verArchivados && (
-                      <button
-                        onClick={() => archivarReporte(r.id, true)}
-                        disabled={procesandoId === r.id}
-                        className={`p-2 rounded-lg ${muted} hover:text-amber-500 hover:bg-amber-500/10`}
-                        title="Archivar"
-                      >
-                        <Archive size={14} />
-                      </button>
-                    )}
-                    {verArchivados && (
-                      <>
+                  {puedeGestionarReportes && (
+                    <div className="flex items-center gap-1.5">
+                      {!verArchivados && (
                         <button
-                          onClick={() => archivarReporte(r.id, false)}
+                          onClick={() => archivarReporte(r.id, true)}
                           disabled={procesandoId === r.id}
-                          className={`p-2 rounded-lg ${muted} hover:text-emerald-500 hover:bg-emerald-500/10`}
-                          title="Restaurar"
+                          className={`p-2 rounded-lg ${muted} hover:text-amber-500 hover:bg-amber-500/10`}
+                          title="Archivar"
                         >
-                          <ArchiveRestore size={14} />
+                          <Archive size={14} />
                         </button>
-                        <button
-                          onClick={() => eliminarReporte(r.id)}
-                          disabled={procesandoId === r.id}
-                          className={`p-2 rounded-lg ${muted} hover:text-red-500 hover:bg-red-500/10`}
-                          title="Eliminar"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </>
-                    )}
-                  </div>
+                      )}
+                      {verArchivados && (
+                        <>
+                          <button
+                            onClick={() => archivarReporte(r.id, false)}
+                            disabled={procesandoId === r.id}
+                            className={`p-2 rounded-lg ${muted} hover:text-emerald-500 hover:bg-emerald-500/10`}
+                            title="Restaurar"
+                          >
+                            <ArchiveRestore size={14} />
+                          </button>
+                          <button
+                            onClick={() => eliminarReporte(r.id)}
+                            disabled={procesandoId === r.id}
+                            className={`p-2 rounded-lg ${muted} hover:text-red-500 hover:bg-red-500/10`}
+                            title="Eliminar"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

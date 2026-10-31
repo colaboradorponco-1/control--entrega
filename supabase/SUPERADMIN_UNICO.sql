@@ -123,10 +123,29 @@ AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION public.perfil_es_superadministrador(p_usuario_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public, pg_temp
+SET row_security = off
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+      FROM public.perfiles_usuario p
+      JOIN public.roles r ON r.id = p.rol_id
+     WHERE p.usuario_id = p_usuario_id
+       AND r.nombre = 'superadministrador'
+  );
+$$;
+
 REVOKE ALL ON FUNCTION public.get_user_es_superadmin() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.perfil_es_administrador_privilegiado(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.perfil_es_superadministrador(UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_user_es_superadmin() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.perfil_es_administrador_privilegiado(UUID) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.perfil_es_superadministrador(UUID) TO authenticated;
 
 CREATE OR REPLACE FUNCTION public.proteger_roles_administrativos()
 RETURNS TRIGGER
@@ -137,9 +156,31 @@ AS $$
 DECLARE
   v_nuevo_privilegiado BOOLEAN;
   v_anterior_privilegiado BOOLEAN;
+  v_es_superadmin_objetivo BOOLEAN := FALSE;
 BEGIN
   -- Las escrituras de la Edge Function con service_role no tienen auth.uid().
-  IF auth.uid() IS NULL OR public.get_user_es_superadmin() THEN
+  IF auth.uid() IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    SELECT EXISTS (
+      SELECT 1 FROM public.roles
+       WHERE id = OLD.rol_id
+         AND nombre = 'superadministrador'
+    ) INTO v_es_superadmin_objetivo;
+
+    IF v_es_superadmin_objetivo
+       AND (
+         NEW.rol_id IS DISTINCT FROM OLD.rol_id
+         OR to_jsonb(NEW)->'activo' IS DISTINCT FROM to_jsonb(OLD)->'activo'
+       ) THEN
+      RAISE EXCEPTION 'No se puede cambiar el rol o estado de la cuenta única de superadministrador.'
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  IF public.get_user_es_superadmin() THEN
     RETURN NEW;
   END IF;
 
@@ -182,30 +223,32 @@ CREATE TRIGGER perfiles_usuario_proteger_roles_administrativos
   FOR EACH ROW
   EXECUTE FUNCTION public.proteger_roles_administrativos();
 
-CREATE OR REPLACE FUNCTION public.impedir_aprobacion_pedido_superadmin()
+CREATE OR REPLACE FUNCTION public.impedir_escritura_pedidos_superadmin()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF public.get_user_es_superadmin()
-     AND OLD.estado = 'PENDIENTE'
-     AND NEW.estado = 'APROBADO' THEN
-    RAISE EXCEPTION 'El Superadmin puede consultar pedidos, pero no aprobarlos.'
+  IF public.get_user_es_superadmin() THEN
+    RAISE EXCEPTION 'El Superadmin solo puede consultar pedidos.'
       USING ERRCODE = '42501';
   END IF;
 
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
   RETURN NEW;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.impedir_aprobacion_pedido_superadmin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.impedir_escritura_pedidos_superadmin() FROM PUBLIC;
 DROP TRIGGER IF EXISTS pedidos_impedir_aprobacion_superadmin ON public.pedidos;
-CREATE TRIGGER pedidos_impedir_aprobacion_superadmin
-  BEFORE UPDATE OF estado ON public.pedidos
+DROP TRIGGER IF EXISTS pedidos_impedir_escritura_superadmin ON public.pedidos;
+CREATE TRIGGER pedidos_impedir_escritura_superadmin
+  BEFORE INSERT OR UPDATE OR DELETE ON public.pedidos
   FOR EACH ROW
-  EXECUTE FUNCTION public.impedir_aprobacion_pedido_superadmin();
+  EXECUTE FUNCTION public.impedir_escritura_pedidos_superadmin();
 
 DROP POLICY IF EXISTS perfiles_update ON public.perfiles_usuario;
 DROP POLICY IF EXISTS perfiles_admin ON public.perfiles_usuario;
@@ -217,7 +260,10 @@ CREATE POLICY perfiles_update_restringido ON public.perfiles_usuario
     OR (
       public.get_user_rol() = 'administrador'
       AND (
-        public.get_user_es_superadmin()
+        (
+          public.get_user_es_superadmin()
+          AND NOT public.perfil_es_superadministrador(usuario_id)
+        )
         OR NOT public.perfil_es_administrador_privilegiado(usuario_id)
       )
     )
@@ -227,7 +273,10 @@ CREATE POLICY perfiles_update_restringido ON public.perfiles_usuario
     OR (
       public.get_user_rol() = 'administrador'
       AND (
-        public.get_user_es_superadmin()
+        (
+          public.get_user_es_superadmin()
+          AND NOT public.perfil_es_superadministrador(usuario_id)
+        )
         OR NOT public.perfil_es_administrador_privilegiado(usuario_id)
       )
     )

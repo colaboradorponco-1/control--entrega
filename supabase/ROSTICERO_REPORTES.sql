@@ -48,19 +48,40 @@ CREATE POLICY reportes_rosticero_insert ON public.reportes_rosticero
     EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('rosticero', 'administrador', 'superadministrador'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre = 'rosticero')
+    )
+  );
+
+DROP POLICY IF EXISTS reportes_rosticero_update ON public.reportes_rosticero;
+CREATE POLICY reportes_rosticero_update ON public.reportes_rosticero
+  FOR UPDATE USING (
+    creado_por = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.perfiles_usuario pu
+      JOIN public.roles r ON r.id = pu.rol_id
+      WHERE pu.usuario_id = auth.uid()
+        AND r.nombre = 'rosticero'
+    )
+  )
+  WITH CHECK (
+    creado_por = auth.uid()
+    AND EXISTS (
+      SELECT 1 FROM public.perfiles_usuario pu
+      JOIN public.roles r ON r.id = pu.rol_id
+      WHERE pu.usuario_id = auth.uid()
+        AND r.nombre = 'rosticero'
     )
   );
 
 DROP POLICY IF EXISTS reportes_rosticero_delete ON public.reportes_rosticero;
 CREATE POLICY reportes_rosticero_delete ON public.reportes_rosticero
   FOR DELETE USING (
-    EXISTS (
+    creado_por = auth.uid()
+    AND EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
+        AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre = 'rosticero')
     )
-    OR creado_por = auth.uid()
   );
 
 -- 4. RPC para crear reporte
@@ -87,6 +108,17 @@ DECLARE
   v_id BIGINT;
   v_nombre TEXT;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.perfiles_usuario pu
+      JOIN public.roles r ON r.id = pu.rol_id
+     WHERE pu.usuario_id = auth.uid()
+       AND r.nombre = 'rosticero'
+  ) THEN
+    RAISE EXCEPTION 'Solo el rol rosticero puede registrar reportes.'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT nombre_completo INTO v_nombre
   FROM public.perfiles_usuario WHERE usuario_id = auth.uid();
 

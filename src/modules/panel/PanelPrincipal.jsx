@@ -13,32 +13,34 @@ import {
 const PANELES_POR_ROL = {
   superadministrador: {
     titulo: 'Panel de Superadministrador',
-    responsabilidad: 'Supervisa el sistema y administra exclusivamente las cuentas de administradores y superadministradores. Puede consultar pedidos, pero no aprobarlos.',
+    responsabilidad: 'Gestiona sucursales, dueños y usuarios, consulta pedidos y reportes, administra las planillas semanales y supervisa la actividad del sistema.',
     accesos: [
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
       { titulo: 'Planilla de ventas', detalle: 'Ventas por sucursal, inventario y costos de la semana.', ruta: '/planilla', icono: FileSpreadsheet },
-      { titulo: 'Administrar usuarios', detalle: 'Gestiona usuarios y asigna roles administrativos.', ruta: '/usuarios', icono: Users },
-      { titulo: 'Ver pedidos', detalle: 'Consulta pedidos y su avance sin aprobarlos.', ruta: '/sucursal', icono: ShoppingCart },
-      { titulo: 'Sucursales', detalle: 'Consulta y organiza sucursales.', ruta: '/sucursales', icono: MapPin },
-      { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
+      { titulo: 'Administrar usuarios', detalle: 'Gestiona todos los usuarios excepto la cuenta única de superadministrador.', ruta: '/usuarios', icono: Users },
+      { titulo: 'Ver pedidos', detalle: 'Consulta pedidos y su avance sin aprobarlos ni modificarlos.', ruta: '/sucursal', icono: ShoppingCart },
+      { titulo: 'Sucursales', detalle: 'Crea, edita y elimina sucursales.', ruta: '/sucursales', icono: MapPin },
+      { titulo: 'Rutas de reparto', detalle: 'Administra rutas, repartidores y paradas.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
+      { titulo: 'Proveedores', detalle: 'Crea, edita, activa, desactiva y elimina proveedores.', ruta: '/proveedores', icono: Truck },
       { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
       { titulo: 'Reporte Rosticero', detalle: 'Reportes diarios de pollos rostizados.', ruta: '/rosticero', icono: ClipboardList },
+      { titulo: 'Auditoría', detalle: 'Consulta el registro de actividad del sistema.', ruta: '/auditoria', icono: FileText },
     ],
   },
   administrador: {
     titulo: 'Panel de Administrador',
-    responsabilidad: 'Administra la operación general, aprueba pedidos y gestiona sucursales, rutas, dueños y usuarios no administrativos.',
+    responsabilidad: 'Administra la operación general, aprueba pedidos y gestiona sucursales, dueños y usuarios operativos.',
     accesos: [
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
       { titulo: 'Bandeja de avisos', detalle: 'Reportes de entrega y faltantes de las sucursales.', ruta: '/avisos', icono: Bell },
       { titulo: 'Pedidos', detalle: 'Consulta y aprueba solicitudes de las sucursales.', ruta: '/sucursal', icono: ShoppingCart },
       { titulo: 'Usuarios', detalle: 'Gestiona usuarios operativos y de sucursal.', ruta: '/usuarios', icono: Users },
       { titulo: 'Sucursales', detalle: 'Consulta y organiza sucursales.', ruta: '/sucursales', icono: MapPin },
-      { titulo: 'Rutas de reparto', detalle: 'Organiza rutas y repartidores.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
-      { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
+      { titulo: 'Proveedores', detalle: 'Crea, edita, activa, desactiva y elimina proveedores.', ruta: '/proveedores', icono: Truck },
       { titulo: 'Reporte Rosticero', detalle: 'Reportes diarios de pollos rostizados.', ruta: '/rosticero', icono: ClipboardList },
+      { titulo: 'Auditoría', detalle: 'Consulta el registro de actividad del sistema.', ruta: '/auditoria', icono: FileText },
     ],
   },
   operador_planta: {
@@ -79,10 +81,8 @@ const PANELES_POR_ROL = {
   },
   ayudante: {
     titulo: 'Panel de Ayudante',
-    responsabilidad: 'Ayuda al superadministrador revisando múltiples establecimientos y enviando videos de evidencia.',
-    accesos: [
-      { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
-    ],
+    responsabilidad: 'Las revisiones y multas son administradas exclusivamente por el superadministrador.',
+    accesos: [],
   },
 };
 

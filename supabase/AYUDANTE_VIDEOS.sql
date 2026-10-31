@@ -1,6 +1,6 @@
 -- AYUDANTE: agregar soporte de videos a revisiones_dueno
 -- El ayudante revisa establecimientos y envía videos como evidencia.
-a
+
 -- 1. Agregar columna de videos (array de URLs)
 ALTER TABLE public.revisiones_dueno
   ADD COLUMN IF NOT EXISTS videos TEXT[] DEFAULT '{}';
@@ -24,6 +24,11 @@ DECLARE
   v_id BIGINT;
   v_nombre TEXT;
 BEGIN
+  IF NOT public.get_user_es_superadmin() THEN
+    RAISE EXCEPTION 'Solo el superadministrador puede crear revisiones y multas.'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT nombre_completo INTO v_nombre
   FROM public.perfiles_usuario WHERE usuario_id = auth.uid();
 

@@ -387,11 +387,19 @@ export default function DashboardAdmin() {
             <Crown size={16} /> <span className="hidden lg:inline">Dueños</span>
           </button>
           <button
-            onClick={() => navigate('/rutas')}
-            className="flex items-center gap-2 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-500 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+            onClick={() => navigate('/proveedores')}
+            className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/15 px-3 py-2.5 text-sm font-semibold text-cyan-600 transition hover:bg-cyan-500/25"
           >
-            <Route size={16} /> <span className="hidden lg:inline">Rutas</span>
+            <Truck size={16} /> <span className="hidden lg:inline">Proveedores</span>
           </button>
+          {perfil?.roles?.nombre === 'superadministrador' && (
+            <button
+              onClick={() => navigate('/rutas')}
+              className="flex items-center gap-2 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-500 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+            >
+              <Route size={16} /> <span className="hidden lg:inline">Rutas</span>
+            </button>
+          )}
           <button
             onClick={() => navigate('/usuarios')}
             className="flex items-center gap-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-500 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
