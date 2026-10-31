@@ -52,7 +52,7 @@ useEffect(() => {
       const listHistorial = await recepcionRepository.obtenerRecepcionesDelDia();
       setHistorial(listHistorial);
     } catch (err) {
-      console.error('Error al cargar datos:', err);
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudieron cargar proveedores y recepciones.' });
     }
   }, []);
 

@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabaseClient';
 import { evidenciasRepository } from './evidenciasRepository';
 import { esColumnaFaltante } from './columnaFalta';
+import { proveedoresRepository } from './proveedoresRepository';
 
 // Si la base todavia no tiene las columnas de evidencia, la pantalla
 // de planta no puede quedar en blanco: se listan los lotes igual, sin
@@ -40,13 +41,7 @@ const CAMPOS_RECEPCION_SIN_EVIDENCIA = `
 export const recepcionRepository = {
   // Obtener lista de proveedores para el selector del formulario
   async obtenerProveedores() {
-    const { data, error } = await supabase
-      .from('proveedores')
-      .select('id, nombre')
-      .order('nombre', { ascending: true });
-
-    if (error) throw error;
-    return data;
+    return proveedoresRepository.listar({ soloActivos: true });
   },
 
   // Historial de recepciones, con la evidencia de cada lote
@@ -107,7 +102,7 @@ export const recepcionRepository = {
       throw new Error('No se pudo subir la evidencia: ' + (err.message || 'revisa tu conexión'), { cause: err });
     }
 
-    const { data, error } = await supabase.rpc('registrar_lote_proveedor', {
+    const parametros = {
       p_numero_recibo: numero_recibo,
       p_proveedor_id: proveedor_id ? Number(proveedor_id) : null,
       p_kilos: Number(kilos),
@@ -122,7 +117,8 @@ export const recepcionRepository = {
       p_fotos_extra: rutasExtra,
       p_latitude: ubicacion?.lat ?? null,
       p_longitud: ubicacion?.longitude ?? null,
-    });
+    };
+    const { data, error } = await supabase.rpc('registrar_lote_proveedor', parametros);
 
     if (error) throw error;
     return data;

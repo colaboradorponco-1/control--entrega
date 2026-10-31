@@ -48,13 +48,18 @@ const crearErrorDeEdge = (detalle) => {
 };
 
 export const usuariosRepository = {
-  // Listar todos los perfiles con su rol y sucursal
-  async listarUsuarios() {
-    const consultar = async (campos) =>
-      supabase
+  // Listar perfiles acotados a los roles que puede gestionar el rol actual.
+  async listarUsuarios({ rolIds } = {}) {
+    if (rolIds && rolIds.length === 0) return [];
+
+    const consultar = async (campos) => {
+      let query = supabase
         .from('perfiles_usuario')
         .select(campos)
         .order('creado_en', { ascending: false });
+      if (rolIds) query = query.in('rol_id', rolIds);
+      return query;
+    };
 
     // dueno_id es una columna nueva: si la base todavia no la tiene,
     // se listan los usuarios igual. Sin esto la pantalla de usuarios

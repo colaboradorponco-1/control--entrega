@@ -19,16 +19,10 @@ ALTER TABLE public.notificaciones
 ALTER TABLE public.notificaciones
   ADD COLUMN IF NOT EXISTS tipo_notificacion TEXT NOT NULL DEFAULT 'INFO';
 
--- 0. Permitir que ayudantes también creen revisiones
+-- 0. Restringir la gestión de revisiones al superadministrador
 DROP POLICY IF EXISTS revisiones_dueno_insert ON public.revisiones_dueno;
 CREATE POLICY revisiones_dueno_insert ON public.revisiones_dueno
-  FOR INSERT WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.perfiles_usuario pu
-      WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador', 'ayudante'))
-    )
-  );
+  FOR INSERT WITH CHECK (public.get_user_es_superadmin());
 
 DROP POLICY IF EXISTS revisiones_dueno_read ON public.revisiones_dueno;
 CREATE POLICY revisiones_dueno_read ON public.revisiones_dueno
@@ -37,8 +31,19 @@ CREATE POLICY revisiones_dueno_read ON public.revisiones_dueno
     OR EXISTS (
       SELECT 1 FROM public.perfiles_usuario pu
       WHERE pu.usuario_id = auth.uid()
-      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador', 'ayudante'))
+      AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre = 'superadministrador')
     )
+  );
+
+DROP POLICY IF EXISTS revisiones_dueno_update ON public.revisiones_dueno;
+CREATE POLICY revisiones_dueno_update ON public.revisiones_dueno
+  FOR UPDATE USING (
+    public.get_user_es_superadmin()
+    OR dueno_id IN (SELECT dueno_id FROM public.perfiles_usuario WHERE usuario_id = auth.uid())
+  )
+  WITH CHECK (
+    public.get_user_es_superadmin()
+    OR dueno_id IN (SELECT dueno_id FROM public.perfiles_usuario WHERE usuario_id = auth.uid())
   );
 
 -- 2. Actualizar crear_revision_dueno (versión completa)
@@ -66,6 +71,11 @@ DECLARE
   v_usuario_id UUID;
   v_sucursal_nombre TEXT;
 BEGIN
+  IF NOT public.get_user_es_superadmin() THEN
+    RAISE EXCEPTION 'Solo el superadministrador puede crear revisiones y multas.'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT nombre_completo INTO v_nombre
   FROM public.perfiles_usuario WHERE usuario_id = auth.uid();
 

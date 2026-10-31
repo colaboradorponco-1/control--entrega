@@ -17,16 +17,23 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.perfiles_usuario pu
+      JOIN public.roles r ON r.id = pu.rol_id
+     WHERE pu.usuario_id = auth.uid()
+       AND r.nombre = 'rosticero'
+  ) THEN
+    RAISE EXCEPTION 'Solo el rol rosticero puede administrar sus reportes.'
+      USING ERRCODE = '42501';
+  END IF;
+
   UPDATE public.reportes_rosticero
   SET archivado = p_archivado,
       archivado_en = CASE WHEN p_archivado THEN now() ELSE NULL END,
       actualizado_en = now()
   WHERE id = p_reporte_id
-  AND (creado_por = auth.uid() OR EXISTS (
-    SELECT 1 FROM public.perfiles_usuario pu
-    WHERE pu.usuario_id = auth.uid()
-    AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
-  ));
+    AND creado_por = auth.uid();
 END;
 $$;
 
@@ -39,14 +46,21 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.perfiles_usuario pu
+      JOIN public.roles r ON r.id = pu.rol_id
+     WHERE pu.usuario_id = auth.uid()
+       AND r.nombre = 'rosticero'
+  ) THEN
+    RAISE EXCEPTION 'Solo el rol rosticero puede administrar sus reportes.'
+      USING ERRCODE = '42501';
+  END IF;
+
   DELETE FROM public.reportes_rosticero
   WHERE id = p_reporte_id
   AND archivado = TRUE
-  AND (creado_por = auth.uid() OR EXISTS (
-    SELECT 1 FROM public.perfiles_usuario pu
-    WHERE pu.usuario_id = auth.uid()
-    AND pu.rol_id IN (SELECT id FROM public.roles WHERE nombre IN ('administrador', 'superadministrador'))
-  ));
+  AND creado_por = auth.uid();
 END;
 $$;
 

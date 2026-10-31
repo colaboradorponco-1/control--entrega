@@ -57,27 +57,38 @@ Deno.serve(async (req) => {
     const { data: authData, error: authErr } = await caller.auth.getUser()
     if (authErr || !authData || !authData.user) return reply({ error: 'Sesion no valida' }, 401)
 
-    const { data: perfil } = await caller
+    const admin = createClient(url, serviceKey)
+    const { data: perfil, error: errorPerfil } = await admin
       .from('perfiles_usuario')
-      .select('id, rol_id, roles ( nombre )')
+      .select('id, rol_id')
       .eq('usuario_id', authData.user.id)
       .maybeSingle()
 
-    if (!perfil || !perfil.roles || !['administrador', 'superadmin'].includes(perfil.roles.nombre)) {
-      return reply({ error: 'Solo un administrador puede gestionar usuarios' }, 403)
+    if (errorPerfil) {
+      return reply({ error: 'No se pudo verificar el perfil: ' + errorPerfil.message }, 400)
+    }
+    if (!perfil?.rol_id) {
+      return reply({ error: 'No se encontró el rol del usuario autenticado' }, 403)
     }
 
-    const admin = createClient(url, serviceKey)
+    const { data: rol, error: errorRol } = await admin
+      .from('roles')
+      .select('nombre')
+      .eq('id', perfil.rol_id)
+      .maybeSingle()
+
+    if (errorRol) {
+      return reply({ error: 'No se pudo verificar el rol: ' + errorRol.message }, 400)
+    }
+    if (!rol || !['administrador', 'superadministrador'].includes(rol.nombre)) {
+      return reply({ error: 'Solo un administrador o superadministrador puede gestionar usuarios' }, 403)
+    }
+
     const body = await req.json()
-    const esSuperadmin = perfil.roles.nombre === 'superadmin'
+    const esSuperadmin = rol.nombre === 'superadministrador'
     const accionesSobreUsuario = ['actualizar_correo', 'eliminar', 'desactivar', 'reactivar', 'resetear']
 
-    if (
-      !esSuperadmin &&
-      accionesSobreUsuario.includes(body.accion) &&
-      body.id &&
-      body.id !== authData.user.id
-    ) {
+    if (accionesSobreUsuario.includes(body.accion) && body.id) {
       const { data: usuarioObjetivo, error: errorObjetivo } = await admin
         .from('perfiles_usuario')
         .select('roles!inner(nombre)')
@@ -87,12 +98,45 @@ Deno.serve(async (req) => {
       if (errorObjetivo) {
         return reply({ error: 'No se pudo verificar el rol del usuario: ' + errorObjetivo.message }, 400)
       }
-      if (['administrador', 'superadmin'].includes(usuarioObjetivo?.roles?.nombre)) {
-        return reply({ error: 'Solo el Superadmin puede gestionar cuentas de administrador' }, 403)
+      const rolObjetivo = usuarioObjetivo?.roles?.nombre
+      if (!rolObjetivo) return reply({ error: 'No se encontró el rol del usuario' }, 404)
+      if (rolObjetivo === 'superadministrador') {
+        return reply({ error: 'La cuenta única de superadministrador no se puede gestionar desde Usuarios' }, 403)
+      }
+
+      if (body.id === authData.user.id) {
+        // El propio perfil se mantiene fuera de las acciones administrativas.
+        if (body.accion === 'eliminar' || body.accion === 'desactivar') {
+          return reply({ error: 'No puedes eliminar ni desactivar tu propia cuenta' }, 400)
+        }
+      } else {
+        const objetivoPermitido = esSuperadmin
+          ? rolObjetivo !== 'superadministrador'
+          : !['administrador', 'superadministrador'].includes(rolObjetivo)
+        if (!objetivoPermitido) {
+          return reply({ error: 'No tienes permiso para gestionar una cuenta con ese rol' }, 403)
+        }
       }
     }
 
     if (body.accion === 'listar_correos') {
+      const { data: perfiles, error: errorPerfiles } = await admin
+        .from('perfiles_usuario')
+        .select('usuario_id, roles!inner(nombre)')
+
+      if (errorPerfiles) {
+        return reply({ error: 'No se pudieron consultar los perfiles: ' + errorPerfiles.message }, 400)
+      }
+
+      const usuariosPermitidos = new Set(
+        (perfiles || [])
+          .filter((item) => (
+            esSuperadmin
+              ? item.roles.nombre !== 'superadministrador'
+              : !['administrador', 'superadministrador'].includes(item.roles.nombre)
+          ))
+          .map((item) => item.usuario_id)
+      )
       const usuarios = []
       let pagina = 1
       const porPagina = 1000
@@ -105,7 +149,11 @@ Deno.serve(async (req) => {
         if (error) return reply({ error: 'No se pudieron consultar los correos: ' + error.message }, 400)
 
         const encontrados = data.users || []
-        usuarios.push(...encontrados.map((user) => ({ id: user.id, email: user.email || '' })))
+        usuarios.push(
+          ...encontrados
+            .filter((user) => usuariosPermitidos.has(user.id))
+            .map((user) => ({ id: user.id, email: user.email || '' }))
+        )
         if (encontrados.length < porPagina) break
         pagina += 1
       }
@@ -139,21 +187,25 @@ Deno.serve(async (req) => {
       if (!body.email || !body.password || !body.nombre_completo) {
         return reply({ error: 'Correo, contrasena y nombre son obligatorios' }, 400)
       }
+      if (!body.rol_id) {
+        return reply({ error: 'Selecciona un rol para el usuario' }, 400)
+      }
       if (body.password.length < 6) {
         return reply({ error: 'La contrasena debe tener al menos 6 caracteres' }, 400)
       }
-      if (body.rol_id) {
-        const { data: rol, error: errorRol } = await admin
-          .from('roles')
-          .select('nombre')
-          .eq('id', body.rol_id)
-          .maybeSingle()
+      const { data: rol, error: errorRol } = await admin
+        .from('roles')
+        .select('nombre')
+        .eq('id', body.rol_id)
+        .maybeSingle()
 
-        if (errorRol) return reply({ error: 'No se pudo verificar el rol: ' + errorRol.message }, 400)
-        if (!rol) return reply({ error: 'El rol seleccionado no existe' }, 400)
-        if (!esSuperadmin && ['administrador', 'superadmin'].includes(rol.nombre)) {
-          return reply({ error: 'Solo el Superadmin puede crear cuentas de administrador' }, 403)
-        }
+      if (errorRol) return reply({ error: 'No se pudo verificar el rol: ' + errorRol.message }, 400)
+      if (!rol) return reply({ error: 'El rol seleccionado no existe' }, 400)
+      const rolPermitido = esSuperadmin
+        ? rol.nombre !== 'superadministrador'
+        : !['administrador', 'superadministrador'].includes(rol.nombre)
+      if (!rolPermitido) {
+        return reply({ error: 'No tienes permiso para crear una cuenta con ese rol' }, 403)
       }
 
       const { data: creado, error: errAuth } = await admin.auth.admin.createUser({

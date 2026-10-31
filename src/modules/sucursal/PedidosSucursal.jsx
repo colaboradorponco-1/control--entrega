@@ -208,7 +208,7 @@ export default function PedidosSucursal() {
     }`;
   const esSucursal = perfil?.roles?.nombre === 'sucursal';
   const esVistaAdmin = ['administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
-  const esAdmin = ['administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
+  const esAdmin = perfil?.roles?.nombre === 'administrador';
   // El reporte de entrega es del administrador: el superadministrador no lo ve.
   const esAdminReporte = perfil?.roles?.nombre === 'administrador';
 
@@ -509,6 +509,10 @@ export default function PedidosSucursal() {
   };
 
   const aprobarMasivo = async () => {
+    if (perfil?.roles?.nombre !== 'administrador') {
+      setMensaje({ tipo: 'error', texto: 'Solo el administrador puede aprobar pedidos.' });
+      return;
+    }
     if (!seleccionadosParaAprobar.length) return;
     setAprobandoMasivo(true);
     try {
@@ -898,7 +902,7 @@ export default function PedidosSucursal() {
   };
 
   const aprobarPedido = async (pedido) => {
-    if (!['administrador', 'superadministrador'].includes(perfil?.roles?.nombre)) {
+    if (perfil?.roles?.nombre !== 'administrador') {
       setMensaje({ tipo: 'error', texto: 'Solo un administrador puede aprobar pedidos.' });
       return;
     }

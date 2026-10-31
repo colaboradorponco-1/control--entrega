@@ -3,13 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { authRepository } from '../repositories/AuthRepository';
 import { useMemo } from 'react';
 
-/**
- * En las rutas que el superadministrador puede abrir (por ejemplo el
- * panel), queda como administrador y asi puede ver lo mismo.
- * Con excluirSuperadmin la ruta es solo del administrador: el
- * superadministrador vuelve al panel principal.
- */
-export default function ProtectedRoute({ children, rolesPermitidos, excluirSuperadmin }) {
+export default function ProtectedRoute({ children, rolesPermitidos }) {
   const { usuario, perfil, perfilError, cargando, sesionExpirada } = useAuth();
 
   // El aviso viaja en el state de la navegacion. Se memoiza para que
@@ -65,11 +59,7 @@ export default function ProtectedRoute({ children, rolesPermitidos, excluirSuper
   }
 
   const rolActual = perfil.roles?.nombre;
-  const esAdminPermitido = rolActual === 'superadministrador'
-    && !excluirSuperadmin
-    && rolesPermitidos?.includes('administrador');
-
-  if (rolesPermitidos && !rolesPermitidos.includes(rolActual) && !esAdminPermitido) {
+  if (rolesPermitidos && !rolesPermitidos.includes(rolActual)) {
     return <Navigate to="/panel" replace />;
   }
 

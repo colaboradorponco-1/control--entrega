@@ -38,12 +38,19 @@ const RUTA_COLOR = {
 
 const EMPTY_FORM = { nombre_completo: '', email: '', password: '', rol_id: '', nombre_sucursal: '', ruta: '', dueno_id: '' };
 
-const obtenerDatosUsuarios = async () => {
-  const [usuariosData, roles, sucursales] = await Promise.all([
-    usuariosRepository.listarUsuarios(),
+const obtenerDatosUsuarios = async (esSuperadministrador) => {
+  const [rolesDisponibles, sucursales] = await Promise.all([
     usuariosRepository.listarRoles(),
     usuariosRepository.listarSucursales(),
   ]);
+  const roles = rolesDisponibles.filter((rol) => (
+    esSuperadministrador
+      ? rol.nombre !== 'superadministrador'
+      : !['administrador', 'superadministrador'].includes(rol.nombre)
+  ));
+  const usuariosData = await usuariosRepository.listarUsuarios({
+    rolIds: roles.map((rol) => rol.id),
+  });
   const correos = await usuariosRepository.listarCorreos();
   const correoPorId = new Map(correos.map((cuenta) => [cuenta.id, cuenta.email]));
   const usuarios = usuariosData.map((u) => ({
@@ -59,7 +66,7 @@ const obtenerDatosUsuarios = async () => {
 };
 
 export default function GestionUsuarios() {
-  const { usuario } = useAuth();
+  const { usuario, perfil } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
@@ -76,6 +83,7 @@ export default function GestionUsuarios() {
   const [editandoId, setEditandoId] = useState(null);
   const [nuevaPassword, setNuevaPassword] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const esSuperadministrador = perfil?.roles?.nombre === 'superadministrador';
 
   const card = darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200';
   const input = darkMode
@@ -92,7 +100,7 @@ export default function GestionUsuarios() {
   const cargarDatos = useCallback(async (mostrarCarga = false) => {
     try {
       if (mostrarCarga) setCargando(true);
-      const datos = await obtenerDatosUsuarios();
+      const datos = await obtenerDatosUsuarios(esSuperadministrador);
       setUsuarios(datos.usuarios);
       setRoles(datos.roles);
       setSucursales(datos.sucursales);
@@ -102,7 +110,7 @@ export default function GestionUsuarios() {
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [esSuperadministrador]);
 
   // Auto-cierre del mensaje de éxito a los 5 segundos.
   useEffect(() => {
@@ -113,7 +121,7 @@ export default function GestionUsuarios() {
 
   useEffect(() => {
     let vigente = true;
-    obtenerDatosUsuarios()
+    obtenerDatosUsuarios(esSuperadministrador)
       .then((datos) => {
         if (!vigente) return;
         setUsuarios(datos.usuarios);
@@ -131,7 +139,7 @@ export default function GestionUsuarios() {
     return () => {
       vigente = false;
     };
-  }, []);
+  }, [esSuperadministrador]);
 
   const rolActual = roles.find((r) => String(r.id) === String(form.rol_id))?.nombre || '';
   const esRolSucursal = rolActual === 'sucursal';
