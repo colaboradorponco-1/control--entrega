@@ -56,6 +56,13 @@ export default function PlanillaSemanal() {
   const [confirmacionCompras, setConfirmacionCompras] = useState(null);
   const [procesandoCompras, setProcesandoCompras] = useState(false);
 
+  useEffect(() => {
+    if (!aviso || guardando || procesandoCompras) return undefined;
+    const duracion = aviso.tipo === 'error' ? 8000 : 5000;
+    const temporizador = window.setTimeout(() => setAviso(null), duracion);
+    return () => window.clearTimeout(temporizador);
+  }, [aviso, guardando, procesandoCompras]);
+
   const dias = useMemo(() => diasDeSemana(inicio), [inicio]);
   const rango = useMemo(() => rangoSemana(inicio), [inicio]);
 

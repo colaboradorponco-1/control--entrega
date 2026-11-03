@@ -67,29 +67,8 @@ export default function SeccionInventario({
       </header>
 
       <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2 text-xs ${borde}`}>
-        <span className={muted}>Día: {DIAS_LARGOS[diaIdx]} {iso}</span>
         <div className="flex flex-wrap items-center gap-2">
-          <label className={`font-semibold ${muted}`}>
-            Proveedor
-            <select
-              value={filtroProveedor}
-              onChange={(evento) => onFiltroProveedor(evento.target.value)}
-              className={`ml-2 rounded-lg border px-2.5 py-2 text-xs ${oscuro ? 'border-slate-700 bg-slate-950 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-            >
-              <option value="todos">Todos con datos</option>
-              {proveedores.map((proveedor) => (
-                <option key={proveedor.id} value={proveedor.id}>{proveedor.nombre}</option>
-              ))}
-            </select>
-          </label>
-          {acciones}
-          <button
-            type="button"
-            onClick={onIniciar}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-amber-950 transition hover:bg-amber-300"
-          >
-            <Plus size={15} /> Iniciar plantilla
-          </button>
+          <span className={muted}>Día: {DIAS_LARGOS[diaIdx]} {iso}</span>
           <button
             type="button"
             onClick={() => onTraerAyer({ fechaActual: iso, fechaAyer: isoAyer })}
@@ -97,6 +76,29 @@ export default function SeccionInventario({
           >
             Traer saldo de ayer
           </button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className={`flex items-center gap-2 font-semibold ${muted}`}>
+            Proveedor
+            <select
+              value={filtroProveedor}
+              onChange={(evento) => onFiltroProveedor(evento.target.value)}
+              className={`rounded-lg border px-2.5 py-2 text-xs ${oscuro ? 'border-slate-700 bg-slate-950 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+            >
+              <option value="todos">Todos con datos</option>
+              {proveedores.map((proveedor) => (
+                <option key={proveedor.id} value={proveedor.id}>{proveedor.nombre}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={onIniciar}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-amber-950 transition hover:bg-amber-300"
+          >
+            <Plus size={15} /> Iniciar plantilla
+          </button>
+          {acciones}
         </div>
       </div>
 

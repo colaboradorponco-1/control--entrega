@@ -47,43 +47,47 @@ export default function SeccionVentas({
           <h2 className={`text-base font-black ${texto}`}>2. Control de Ventas por Sucursal</h2>
           <p className={`mt-0.5 text-xs ${muted}`}>Consulta los datos guardados y abre una sucursal para editar su planilla.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className={`text-xs font-semibold ${muted}`}>
-            Sucursal
-            <select
-              value={filtroSucursal}
-              onChange={(evento) => onFiltroSucursal(evento.target.value)}
-              className={`ml-2 rounded-lg border px-2.5 py-2 text-xs ${oscuro ? 'border-slate-700 bg-slate-950 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
-            >
-              <option value="todas">Todas con datos</option>
-              {sucursales.map((sucursal) => (
-                <option key={sucursal.id} value={sucursal.id}>{sucursal.nombre}</option>
-              ))}
-            </select>
-          </label>
-          {acciones}
-          <button
-            type="button"
-            onClick={onIniciar}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-amber-950 transition hover:bg-amber-300"
-          >
-            <Plus size={15} /> Iniciar plantilla
-          </button>
-          <div className={`inline-flex overflow-hidden rounded-lg border ${borde}`}>
-            {CAMPOS.map((opcion) => (
-              <button
-                key={opcion.clave}
-                type="button"
-                onClick={() => setCampo(opcion.clave)}
-                className={`px-3 py-1.5 text-xs font-semibold transition ${
-                  campo === opcion.clave
-                    ? 'bg-cyan-600 text-white'
-                    : oscuro ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-white text-gray-600 hover:bg-gray-50'
-                }`}
+        <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className={`flex items-center gap-2 text-xs font-semibold ${muted}`}>
+              Sucursal
+              <select
+                value={filtroSucursal}
+                onChange={(evento) => onFiltroSucursal(evento.target.value)}
+                className={`rounded-lg border px-2.5 py-2 text-xs ${oscuro ? 'border-slate-700 bg-slate-950 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
               >
-                {opcion.etiqueta}
-              </button>
-            ))}
+                <option value="todas">Todas con datos</option>
+                {sucursales.map((sucursal) => (
+                  <option key={sucursal.id} value={sucursal.id}>{sucursal.nombre}</option>
+                ))}
+              </select>
+            </label>
+            <div className={`inline-flex overflow-hidden rounded-lg border ${borde}`}>
+              {CAMPOS.map((opcion) => (
+                <button
+                  key={opcion.clave}
+                  type="button"
+                  onClick={() => setCampo(opcion.clave)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition ${
+                    campo === opcion.clave
+                      ? 'bg-cyan-600 text-white'
+                      : oscuro ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {opcion.etiqueta}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:border-l lg:border-slate-700 lg:pl-3">
+            <button
+              type="button"
+              onClick={onIniciar}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-2 text-xs font-bold text-amber-950 transition hover:bg-amber-300"
+            >
+              <Plus size={15} /> Iniciar plantilla
+            </button>
+            {acciones}
           </div>
         </div>
       </header>
