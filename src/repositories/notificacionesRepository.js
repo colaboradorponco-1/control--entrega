@@ -15,7 +15,7 @@ const CAMPOS_CALIDAD =
   'estado_producto,observaciones_entrega,fotos_observaciones,' +
   'unidades_pedidas,unidades_recibidas,faltantes,recibido_por,' +
   'observaciones_recepcion,foto_url,firma_url,fotos_extra,' +
-  'videos,documento_url,' +
+  'videos,documento_url,monto_multa,' +
   'area_atencion_cliente,area_personal,area_comida,area_limpieza,area_infraestructura,' +
   'origen_nombre,leido,leido_en,creado_en';
 

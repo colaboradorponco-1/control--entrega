@@ -46,7 +46,7 @@ export default function SeccionCompras({
       <header className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 ${borde}`}>
         <div>
           <h2 className={`text-base font-black ${texto}`}>1. Registro de Compras por Proveedor</h2>
-          <p className={`mt-0.5 text-xs ${muted}`}>Kg., precio, unidades, total y promedio por cada día y el total semanal.</p>
+          <p className={`mt-0.5 text-xs ${muted}`}>Las recepciones de planta aparecen automáticamente; el superadministrador también puede agregar o corregir recibos manualmente.</p>
         </div>
         <div className="flex w-full flex-col gap-3 lg:w-auto lg:flex-row lg:items-center lg:justify-end">
           <div className="flex flex-wrap items-center gap-2">

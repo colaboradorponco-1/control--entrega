@@ -122,6 +122,78 @@ export const planillaRepository = {
     return data || [];
   },
 
+  async listarVentasCerradas({ semanaInicio }) {
+    const { data, error } = await supabase
+      .from('planillas_semanales_cerradas')
+      .select('entidad_id')
+      .eq('tipo', 'ventas')
+      .eq('semana_inicio', semanaInicio)
+      .is('reabierta_en', null);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listarPlanillasVentasGuardadas() {
+    const { data, error } = await supabase
+      .from('planillas_ventas_semanales')
+      .select('semana_inicio, guardada_en')
+      .order('semana_inicio', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listarCierresVentas() {
+    const { data, error } = await supabase
+      .from('planillas_semanales_cerradas')
+      .select('semana_inicio, entidad_id')
+      .eq('tipo', 'ventas')
+      .is('reabierta_en', null);
+    if (error) throw error;
+    return data || [];
+  },
+
+  async registrarPlanillaVentasGuardada({ semanaInicio }) {
+    const { error } = await supabase.rpc('registrar_planilla_ventas_guardada', {
+      p_semana_inicio: semanaInicio,
+    });
+    if (error) throw error;
+  },
+
+  async listarPlanillasVentasArchivadas() {
+    const { data, error } = await supabase
+      .from('planillas_ventas_archivadas')
+      .select('semana_inicio, archivado_en')
+      .eq('archivado', true)
+      .order('semana_inicio', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async archivarPlanillaVentas({ semanaInicio, archivar }) {
+    const { error } = await supabase.rpc('archivar_planilla_ventas', {
+      p_semana_inicio: semanaInicio,
+      p_archivar: archivar,
+    });
+    if (error) throw error;
+  },
+
+  async eliminarPlanillaVentas({ semanaInicio }) {
+    const { data, error } = await supabase.rpc('eliminar_planilla_ventas', {
+      p_semana_inicio: semanaInicio,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async listarEntregas({ desde, hasta }) {
+    const { data, error } = await supabase.rpc('listar_entregas_planilla', {
+      p_desde: desde,
+      p_hasta: hasta,
+    });
+    if (error) throw error;
+    return data || [];
+  },
+
   async guardarVenta({ fecha, sucursalId, unidades, transacciones, importeBs, creadoPor }) {
     const { data, error } = await supabase
       .from('planilla_ventas')
@@ -150,6 +222,34 @@ export const planillaRepository = {
       .lte('fecha', hasta);
     if (error) throw error;
     return data || [];
+  },
+
+  async listarInventarioPlanta({ desde, hasta }) {
+    const { data, error } = await supabase.rpc('listar_inventario_planta_planilla', {
+      p_desde: desde,
+      p_hasta: hasta,
+    });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async listarAjustesInventarioPlanta({ desde, hasta }) {
+    const { data, error } = await supabase.rpc('listar_ajustes_inventario_planta', {
+      p_desde: desde,
+      p_hasta: hasta,
+    });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async registrarAjusteInventarioPlanta({ fecha, ajusteKilos, ajusteUnidades, motivo }) {
+    const { error } = await supabase.rpc('registrar_ajuste_inventario_planta', {
+      p_fecha: fecha,
+      p_ajuste_kilos: Number(ajusteKilos) || 0,
+      p_ajuste_unidades: Number(ajusteUnidades) || 0,
+      p_motivo: motivo.trim(),
+    });
+    if (error) throw error;
   },
 
   async guardarInventario({ fecha, proveedorId, kilosAyer, kilosEntrante, kilosSaliente, creadoPor }) {

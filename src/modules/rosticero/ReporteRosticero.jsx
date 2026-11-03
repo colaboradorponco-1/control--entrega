@@ -7,7 +7,13 @@ import { authRepository } from '../../repositories/AuthRepository';
 import {
   ArrowLeft, LogOut, Sun, Moon, Loader2, Plus, X,
   ClipboardList, CheckCircle, Trash2, AlertCircle, Archive, ArchiveRestore,
+  Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
+import {
+  normalizarBusqueda,
+  POR_PAGINA,
+  rangoUltimos30Dias,
+} from '../../utils/filtrosHistorial';
 
 export default function ReporteRosticero() {
   const { darkMode, toggleTheme } = useTheme();
@@ -23,6 +29,12 @@ export default function ReporteRosticero() {
   const [mensaje, setMensaje] = useState(null);
   const [verArchivados, setVerArchivados] = useState(false);
   const [procesandoId, setProcesandoId] = useState(null);
+  const [periodo, setPeriodo] = useState(rangoUltimos30Dias);
+  const [sucursalFiltro, setSucursalFiltro] = useState('todas');
+  const [busqueda, setBusqueda] = useState('');
+  const [busquedaAplicada, setBusquedaAplicada] = useState('');
+  const [pagina, setPagina] = useState(0);
+  const [totalReportes, setTotalReportes] = useState(0);
 
   const [form, setForm] = useState({
     sucursal_id: '',
@@ -50,7 +62,7 @@ export default function ReporteRosticero() {
   const normal = darkMode ? 'text-slate-300' : 'text-gray-700';
   const puedeGestionarReportes = perfil?.roles?.nombre === 'rosticero';
 
-  const cargar = useCallback(async () => {
+  const cargar = useCallback(async (paginaSolicitada = pagina) => {
     try {
       setCargando(true);
       setError(null);
@@ -58,28 +70,39 @@ export default function ReporteRosticero() {
       const { data: sucData } = await supabase.from('sucursales').select('id, nombre, sector').order('nombre');
       setSucursales(sucData || []);
 
-      // Cargar reportes del usuario
       let query = supabase
         .from('reportes_rosticero')
-        .select('*, sucursales(nombre, sector)')
+        .select('*, sucursales(nombre, sector)', { count: 'exact' })
         .order('fecha', { ascending: false })
-        .limit(50);
-      if (verArchivados) {
-        query = query.eq('archivado', true);
-      } else {
-        query = query.eq('archivado', false);
+        .range(paginaSolicitada * POR_PAGINA, (paginaSolicitada + 1) * POR_PAGINA - 1)
+        .eq('archivado', verArchivados);
+      if (periodo.desde) query = query.gte('fecha', periodo.desde);
+      if (periodo.hasta) query = query.lte('fecha', periodo.hasta);
+      if (sucursalFiltro !== 'todas') query = query.eq('sucursal_id', Number(sucursalFiltro));
+      const termino = normalizarBusqueda(busquedaAplicada);
+      if (termino) {
+        query = query.or(`cajero.ilike.%${termino}%,supervisor.ilike.%${termino}%,observaciones_detalle.ilike.%${termino}%`);
       }
-      const { data: repData, error: err } = await query;
+      const { data: repData, error: err, count } = await query;
       if (err) throw err;
       setReportes(repData || []);
+      setTotalReportes(count || 0);
     } catch (err) {
       setError(err.message || 'No se pudieron cargar los datos');
     } finally {
       setCargando(false);
     }
-  }, [verArchivados]);
+  }, [busquedaAplicada, pagina, periodo, sucursalFiltro, verArchivados]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  useEffect(() => {
+    const temporizador = window.setTimeout(() => {
+      setBusquedaAplicada(busqueda);
+      setPagina(0);
+    }, 300);
+    return () => window.clearTimeout(temporizador);
+  }, [busqueda]);
 
   const totalPollosHornear = (Number(form.saldo_inicio_dia) || 0) + (Number(form.ingresos_dia) || 0);
   const pollosVendidos = totalPollosHornear - (Number(form.saldo_final_dia) || 0);
@@ -137,7 +160,8 @@ export default function ReporteRosticero() {
       });
       setFirma(null);
       setMostrarForm(false);
-      await cargar();
+      setPagina(0);
+      await cargar(0);
     } catch (err) {
       setError(err.message || 'No se pudo guardar el reporte');
     } finally {
@@ -157,6 +181,7 @@ export default function ReporteRosticero() {
         p_archivado: archivado,
       });
       setMensaje(archivado ? 'Reporte archivado.' : 'Reporte restaurado.');
+      setPagina(0);
       await cargar();
     } catch (err) {
       setError(err.message || 'No se pudo archivar el reporte');
@@ -175,6 +200,7 @@ export default function ReporteRosticero() {
       setProcesandoId(id);
       await supabase.rpc('eliminar_reporte_rosticero', { p_reporte_id: id });
       setMensaje('Reporte eliminado.');
+      setPagina(0);
       await cargar();
     } catch (err) {
       setError(err.message || 'No se pudo eliminar el reporte');
@@ -223,7 +249,10 @@ export default function ReporteRosticero() {
             {puedeGestionarReportes && (
               <>
                 <button
-                  onClick={() => setVerArchivados((v) => !v)}
+                  onClick={() => {
+                    setVerArchivados((actual) => !actual);
+                    setPagina(0);
+                  }}
                   className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${input}`}
                 >
                   {verArchivados ? 'Ver activos' : 'Ver archivados'}
@@ -237,6 +266,67 @@ export default function ReporteRosticero() {
               </>
             )}
           </div>
+        </div>
+
+        <div className={`${card} mb-4 grid gap-3 rounded-2xl border p-4 sm:grid-cols-2 lg:grid-cols-5`}>
+          <label className={`relative text-xs font-semibold ${muted}`}>
+            Buscar cajero, supervisor u observación
+            <Search size={15} className="pointer-events-none absolute left-3 top-9" />
+            <input
+              value={busqueda}
+              onChange={(evento) => setBusqueda(evento.target.value)}
+              className={`mt-1 w-full rounded-xl border py-2 pl-9 pr-3 text-sm font-normal ${input}`}
+              placeholder="Escribe para buscar..."
+            />
+          </label>
+          <label className={`text-xs font-semibold ${muted}`}>
+            Sucursal
+            <select
+              value={sucursalFiltro}
+              onChange={(evento) => { setSucursalFiltro(evento.target.value); setPagina(0); }}
+              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm ${input}`}
+            >
+              <option value="todas">Todas las sucursales</option>
+              {sucursales.map((sucursal) => <option key={sucursal.id} value={sucursal.id}>{sucursal.nombre}</option>)}
+            </select>
+          </label>
+          <label className={`text-xs font-semibold ${muted}`}>
+            Desde
+            <input
+              type="date"
+              value={periodo.desde}
+              max={periodo.hasta}
+              onChange={(evento) => { setPeriodo((actual) => ({ ...actual, desde: evento.target.value })); setPagina(0); }}
+              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm ${input}`}
+            />
+          </label>
+          <label className={`text-xs font-semibold ${muted}`}>
+            Hasta
+            <input
+              type="date"
+              value={periodo.hasta}
+              min={periodo.desde}
+              onChange={(evento) => { setPeriodo((actual) => ({ ...actual, hasta: evento.target.value })); setPagina(0); }}
+              className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm ${input}`}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              setPeriodo(rangoUltimos30Dias());
+              setSucursalFiltro('todas');
+              setBusqueda('');
+              setBusquedaAplicada('');
+              setPagina(0);
+            }}
+            className={`self-end rounded-xl border px-3 py-2 text-sm font-semibold ${input}`}
+          >
+            Limpiar filtros
+          </button>
+        </div>
+
+        <div className={`mb-3 text-xs ${muted}`}>
+          Mostrando {reportes.length} de {totalReportes} reportes de los últimos 30 días o del período elegido.
         </div>
 
         {puedeGestionarReportes && mostrarForm && (
@@ -435,11 +525,11 @@ export default function ReporteRosticero() {
             <Loader2 size={24} className="animate-spin text-amber-500" />
             <span className={muted}>Cargando...</span>
           </div>
-        ) : reportes.length === 0 ? (
+        ) : totalReportes === 0 ? (
           <div className={`${card} border rounded-2xl p-10 text-center`}>
             <ClipboardList size={40} className={`mx-auto mb-4 ${muted}`} />
-            <p className={`font-bold mb-2 ${strong}`}>Sin reportes</p>
-            <p className={`text-sm ${muted}`}>Aún no hay reportes de rosticero.</p>
+            <p className={`font-bold mb-2 ${strong}`}>No hay resultados</p>
+            <p className={`text-sm ${muted}`}>Prueba cambiando el período o los filtros. Los reportes antiguos se conservan.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -486,6 +576,31 @@ export default function ReporteRosticero() {
                         {r.obs_pollos_enfermos && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-red-500/10 text-red-500">Pollos enfermos</span>}
                         {r.obs_pollos_pequenos && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-500">Pollos pequeños</span>}
                         {r.obs_otros && <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-gray-500/10 text-gray-500">Otros</span>}
+                      </div>
+                    )}
+                    {!cargando && totalReportes > POR_PAGINA && (
+                      <div className={`mt-4 flex items-center justify-between ${muted}`}>
+                        <span className="text-xs">Página {pagina + 1} de {Math.ceil(totalReportes / POR_PAGINA)}</span>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={pagina === 0}
+                            onClick={() => setPagina((actual) => actual - 1)}
+                            className={`rounded-lg border p-2 disabled:opacity-40 ${input}`}
+                            aria-label="Página anterior"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={(pagina + 1) * POR_PAGINA >= totalReportes}
+                            onClick={() => setPagina((actual) => actual + 1)}
+                            className={`rounded-lg border p-2 disabled:opacity-40 ${input}`}
+                            aria-label="Página siguiente"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
                       </div>
                     )}
                     {r.observaciones_detalle && (

@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { authRepository } from '../../repositories/AuthRepository';
@@ -13,7 +13,7 @@ import {
   ArrowLeft, LogOut, Sun, Moon, MapPin, Loader2, Crown,
   TrendingUp, Boxes, AlertCircle, Search, Plus, X, ShoppingCart,
   History, ChevronDown, ChevronUp, Camera, Archive, ArchiveRestore, Trash2,
-  Download, Ban, Copy, Clock, ChevronRight, FilterX, Truck, CheckCheck, Calendar, AlertTriangle, Eye, FileText,
+  Download, Ban, Copy, Clock, ChevronRight, FilterX, Truck, CheckCheck, Calendar, AlertTriangle, Eye, FileText, Video,
 } from 'lucide-react';
 
 const fechaHoyBolivia = () => {
@@ -29,6 +29,13 @@ const fechaHoyBolivia = () => {
 
 const ESTADOS_PROGRESO = ['PENDIENTE', 'APROBADO', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO'];
 const ESTADOS_FINALES = ['ENTREGADO', 'CANCELADO', 'RECHAZADO'];
+const AREAS_REVISION = [
+  { campo: 'area_atencion_cliente', nombre: 'Atención al cliente', color: 'bg-blue-500/10 text-blue-500' },
+  { campo: 'area_personal', nombre: 'Personal', color: 'bg-purple-500/10 text-purple-500' },
+  { campo: 'area_comida', nombre: 'Comida', color: 'bg-amber-500/10 text-amber-500' },
+  { campo: 'area_limpieza', nombre: 'Limpieza', color: 'bg-emerald-500/10 text-emerald-500' },
+  { campo: 'area_infraestructura', nombre: 'Infraestructura', color: 'bg-gray-500/10 text-gray-500' },
+];
 const ETIQUETA_ESTADO = {
   PENDIENTE: 'Pendiente',
   APROBADO: 'Aprobado',
@@ -66,6 +73,7 @@ const IconoOrden = ({ col, orden }) => {
 export default function MisSucursalesDueno() {
   const { usuario, perfil } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
+  const location = useLocation();
   const navigate = useNavigate();
 
   const [pedidos, setPedidos] = useState([]);
@@ -141,6 +149,25 @@ export default function MisSucursalesDueno() {
 
   useEffect(() => {
     if (duenoId) cargarRevisiones();
+  }, [duenoId, cargarRevisiones]);
+
+  useEffect(() => {
+    if (!duenoId) return undefined;
+    const canal = supabase
+      .channel(`dueno-revisiones-${duenoId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'revisiones_dueno',
+          filter: `dueno_id=eq.${duenoId}`,
+        },
+        () => cargarRevisiones()
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(canal); };
   }, [duenoId, cargarRevisiones]);
 
   const marcarRevisionLeida = async (rev) => {
@@ -743,6 +770,9 @@ export default function MisSucursalesDueno() {
     pedidosAnterioresRef.current = nuevos;
   }, [pedidos]);
   const [vistaCalendario, setVistaCalendario] = useState(false);
+  const [vistaPanel, setVistaPanel] = useState(
+    () => location.state?.seccionInicial || 'pedidos',
+  );
   const calendarioMes = useMemo(() => {
     const ahora = new Date();
     const año = ahora.getFullYear();
@@ -901,9 +931,23 @@ export default function MisSucursalesDueno() {
           <button onClick={() => navigate('/panel')} className={`p-2.5 rounded-xl border transition ${input}`} aria-label="Volver al panel">
             <ArrowLeft size={18} />
           </button>
-          <PanelNotificaciones rutaPedido="/mis-sucursales" rutaBandeja="/mis-sucursales/avisos" />
+          <PanelNotificaciones
+            rutaPedido="/mis-sucursales"
+            rutaBandeja="/mis-sucursales/avisos"
+            alAbrirAviso={(aviso) => {
+              const tipo = String(aviso.tipo || aviso.tipo_notificacion || '').toUpperCase();
+              setVistaPanel(
+                ['MULTA', 'REVISION', 'OBSERVACION', 'ALERTA', 'INFO'].includes(tipo)
+                  ? 'revisiones'
+                  : 'pedidos',
+              );
+            }}
+          />
           <button
-            onClick={() => setVistaCalendario((v) => !v)}
+            onClick={() => {
+              setVistaPanel('pedidos');
+              setVistaCalendario((v) => !v);
+            }}
             className={`p-2.5 rounded-xl border transition ${input}`}
             aria-label="Vista calendario"
             title="Vista calendario"
@@ -962,8 +1006,48 @@ export default function MisSucursalesDueno() {
           </div>
         )}
 
+        <nav
+          aria-label="Secciones de Mis Sucursales"
+          className={`mb-6 flex flex-wrap gap-2 rounded-2xl border p-2 ${card}`}
+        >
+          {[
+            { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, badge: metricas.pendientes },
+            { id: 'resumen', label: 'Resumen', icon: TrendingUp },
+            { id: 'inventario', label: 'Inventario', icon: Boxes },
+            {
+              id: 'revisiones',
+              label: 'Revisiones y multas',
+              icon: AlertTriangle,
+              badge: revisiones.filter((revision) => !revision.leido).length,
+            },
+          ].map(({ id, label, icon: Icon, badge }) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={vistaPanel === id}
+              onClick={() => setVistaPanel(id)}
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold transition ${
+                vistaPanel === id
+                  ? 'bg-amber-500 text-white'
+                  : darkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              <Icon size={15} />
+              {label}
+              {badge > 0 && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                  vistaPanel === id ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
+                }`}>
+                  {badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </nav>
+
         {/* ── Dashboard de Prioridades ── */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {vistaPanel === 'pedidos' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {/* Alertas de Acción */}
           {(metricas.porRecibir > 0 || metricas.sinReporte > 0) && (
             <div className={`rounded-2xl border p-4 ${darkMode ? 'bg-indigo-950/30 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200'}`}>
@@ -1002,10 +1086,11 @@ export default function MisSucursalesDueno() {
               </p>
             </div>
           )}
-        </div>
+          </div>
+        )}
 
         {/* ── Alertas de SLA ── */}
-        {alertasSLA.length > 0 && (
+        {vistaPanel === 'pedidos' && alertasSLA.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${darkMode ? 'bg-red-950/30 border-red-500/30' : 'bg-red-50 border-red-200'}`}>
             <div className="flex items-center gap-2 mb-3">
               <AlertCircle size={18} className="text-red-500" />
@@ -1038,7 +1123,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Stock predictivo ── */}
-        {stockPredictivo && stockPredictivo.estado !== 'ok' && (
+        {vistaPanel === 'inventario' && stockPredictivo && stockPredictivo.estado !== 'ok' && (
           <div className={`mb-6 rounded-2xl border p-4 ${
             stockPredictivo.estado === 'critico'
               ? darkMode ? 'bg-red-950/30 border-red-500/30' : 'bg-red-50 border-red-200'
@@ -1059,7 +1144,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Vista de calendario ── */}
-        {vistaCalendario && (
+        {vistaPanel === 'pedidos' && vistaCalendario && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
             <p className={`text-sm font-bold mb-4 ${strong}`}>
               Calendario — {calendarioMes.nombreMes}
@@ -1110,7 +1195,8 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Métricas ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {vistaPanel === 'resumen' && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className={`${card} border rounded-2xl p-4`}>
             <p className={`text-xs uppercase tracking-wider ${muted} mb-1 flex items-center gap-1`}>
               <Boxes size={12} /> Pedidos
@@ -1133,10 +1219,12 @@ export default function MisSucursalesDueno() {
               {metricas.pendientes}
             </p>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* ── KPIs comparativos (mes actual vs. anterior) ── */}
-        <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
+        {vistaPanel === 'resumen' && (
+          <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
           <p className={`text-sm font-bold mb-4 ${strong}`}>Comparativo mensual</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
@@ -1157,10 +1245,11 @@ export default function MisSucursalesDueno() {
               </div>
             ))}
           </div>
-        </div>
+          </div>
+        )}
 
         {/* ── Scorecard de sucursales ── */}
-        {scorecardSucursales.length > 0 && (
+        {vistaPanel === 'resumen' && scorecardSucursales.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
             <p className={`text-sm font-bold mb-4 ${strong}`}>Scorecard de sucursales</p>
             <div className="overflow-x-auto">
@@ -1208,7 +1297,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Tendencia de consumo ── */}
-        {tendenciaConsumo.length > 1 && (
+        {vistaPanel === 'resumen' && tendenciaConsumo.length > 1 && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
             <div className="flex items-center justify-between mb-4">
               <p className={`text-sm font-bold ${strong}`}>Tendencia de consumo (últimas semanas)</p>
@@ -1240,7 +1329,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Metas del mes ── */}
-        {sucursales.length > 0 && (
+        {vistaPanel === 'resumen' && sucursales.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
             <p className={`text-sm font-bold mb-4 ${strong}`}>Metas del mes actual</p>
             <div className="space-y-3">
@@ -1279,7 +1368,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Semáforo de stock ── */}
-        {semaforoStock && (
+        {vistaPanel === 'inventario' && semaforoStock && (
           <div className={`mb-6 rounded-2xl border p-4 ${
             semaforoStock.estado === 'critico'
               ? darkMode ? 'border-red-500/40 bg-red-950/30' : 'border-red-200 bg-red-50'
@@ -1343,7 +1432,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Inventario de mis sucursales ── */}
-        {sucursales.length > 0 && (
+        {vistaPanel === 'inventario' && sucursales.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
             <div className="flex items-center justify-between mb-4">
               <p className={`text-sm font-bold ${strong}`}>Inventario de mis sucursales</p>
@@ -1393,7 +1482,8 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Revisiones y Multas (notificaciones) ── */}
-        <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
+        {vistaPanel === 'revisiones' && (
+          <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <AlertTriangle size={18} className="text-amber-500" />
@@ -1443,6 +1533,20 @@ export default function MisSucursalesDueno() {
                   <p className={`text-[11px] mt-1 ${muted} line-clamp-1`}>
                     {r.descripcion}
                   </p>
+                  {AREAS_REVISION.some(({ campo }) => r[campo]) && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {AREAS_REVISION.filter(({ campo }) => r[campo]).map(({ campo, nombre, color }) => (
+                        <span key={campo} className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${color}`}>
+                          {nombre}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {r.sucursal_id && (
+                    <p className={`mt-1 text-[11px] font-semibold ${muted}`}>
+                      Sucursal: {sucursales.find((s) => String(s.id) === String(r.sucursal_id))?.nombre || `#${r.sucursal_id}`}
+                    </p>
+                  )}
                   {r.monto_multa && (
                     <p className="text-[11px] mt-1 font-bold text-red-500">
                       Monto: Bs. {Number(r.monto_multa).toFixed(2)}
@@ -1453,6 +1557,7 @@ export default function MisSucursalesDueno() {
             </div>
           )}
         </div>
+        )}
 
         {/* ── Modal de revisión ── */}
         {revisionSeleccionada && (
@@ -1481,6 +1586,20 @@ export default function MisSucursalesDueno() {
                   </span>
                 </div>
                 <p className={`text-sm ${normal} whitespace-pre-wrap`}>{revisionSeleccionada.descripcion}</p>
+                <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-900/70' : 'bg-gray-50'}`}>
+                  <p className={`mb-2 text-xs font-bold ${strong}`}>Áreas marcadas</p>
+                  {AREAS_REVISION.some(({ campo }) => revisionSeleccionada[campo]) ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {AREAS_REVISION.filter(({ campo }) => revisionSeleccionada[campo]).map(({ campo, nombre, color }) => (
+                        <span key={campo} className={`rounded-lg px-2 py-1 text-[11px] font-bold ${color}`}>
+                          {nombre}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className={`text-xs ${muted}`}>No se marcaron áreas específicas.</p>
+                  )}
+                </div>
                 {revisionSeleccionada.monto_multa && (
                   <div className={`p-3 rounded-xl ${darkMode ? 'bg-red-950/30 border border-red-500/30' : 'bg-red-50 border border-red-200'}`}>
                     <p className="text-sm font-bold text-red-500">
@@ -1498,6 +1617,22 @@ export default function MisSucursalesDueno() {
                     <Eye size={16} /> Ver documento adjunto
                   </a>
                 )}
+                {revisionSeleccionada.videos?.length > 0 && (
+                  <div className="space-y-2">
+                    <p className={`text-xs font-bold ${strong}`}>Evidencia enviada</p>
+                    {revisionSeleccionada.videos.map((url, index) => (
+                      <a
+                        key={url}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 rounded-xl bg-blue-500/10 px-4 py-2.5 text-sm font-bold text-blue-600 transition hover:bg-blue-500/20"
+                      >
+                        <Video size={16} /> Ver video {index + 1}
+                      </a>
+                    ))}
+                  </div>
+                )}
                 <p className={`text-[10px] ${muted}`}>
                   Creado por: {revisionSeleccionada.creado_por_nombre || 'Sistema'} · {new Date(revisionSeleccionada.creado_en).toLocaleString('es-BO')}
                 </p>
@@ -1507,7 +1642,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Pedidos en camino sin recepción ── */}        {/* ── Pedidos en camino sin recepción ── */}
-        {!verArchivados && pedidosPorRecibir.length > 0 && (
+        {vistaPanel === 'pedidos' && !verArchivados && pedidosPorRecibir.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${darkMode ? 'border-cyan-500/30 bg-cyan-950/30' : 'border-cyan-200 bg-cyan-50'}`}>
             <div className="flex items-start gap-3">
               <Truck size={18} className="mt-0.5 shrink-0 text-cyan-500" />
@@ -1658,7 +1793,7 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Resumen por sucursal ── */}
-        {resumenSucursales.length > 0 && (
+        {vistaPanel === 'resumen' && resumenSucursales.length > 0 && (
           <div className="mb-6">
             <p className={`mb-2 text-xs font-bold uppercase tracking-wider ${muted}`}>
               {verArchivados ? 'Archivados por sucursal' : 'Resumen por sucursal'}
@@ -1704,7 +1839,8 @@ export default function MisSucursalesDueno() {
         )}
 
         {/* ── Barra de búsqueda + acciones ── */}
-        <div className="mb-4">
+        {vistaPanel === 'pedidos' && (
+          <div className="mb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="relative max-w-md flex-1">
               <Search className={`absolute left-3.5 top-3.5 ${muted}`} size={18} />
@@ -1715,7 +1851,7 @@ export default function MisSucursalesDueno() {
                 className={`w-full pl-11 pr-4 py-3 border rounded-xl text-sm ${input}`}
               />
               <p className={`mt-1 text-[10px] ${muted}`}>Atajos: Ctrl+N nuevo pedido · Ctrl+F buscar · Esc cerrar</p>
-            </div>
+              </div>
             {esDueño && !sinVinculo && (
               <button
                 onClick={abrirNuevoPedido}
@@ -1820,9 +1956,10 @@ export default function MisSucursalesDueno() {
             )}
           </div>
         </div>
+        )}
 
         {/* ── Tabla ── */}
-        {cargando ? (
+        {vistaPanel === 'pedidos' && (cargando ? (
           <div className="flex items-center justify-center gap-3 py-20">
             <Loader2 size={24} className="animate-spin text-amber-500" />
             <span className={muted}>Cargando...</span>
@@ -2090,7 +2227,7 @@ export default function MisSucursalesDueno() {
               </tbody>
             </table>
           </div>
-        )}
+        ))}
       </div>
 
       {/* ── Lightbox foto ── */}

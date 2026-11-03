@@ -23,7 +23,7 @@ const PANELES_POR_ROL = {
       { titulo: 'Rutas de reparto', detalle: 'Administra rutas, repartidores y paradas.', ruta: '/rutas', icono: Route },
       { titulo: 'Dueños', detalle: 'Administra dueños y sus sucursales.', ruta: '/duenos', icono: Crown },
       { titulo: 'Proveedores', detalle: 'Crea, edita, activa, desactiva y elimina proveedores.', ruta: '/proveedores', icono: Truck },
-      { titulo: 'Revisiones y Multas', detalle: 'Crea revisiones y multas para dueños.', ruta: '/revisiones-dueno', icono: FileText },
+      { titulo: 'Revisiones y Multas', detalle: 'Crea registros, asigna un ayudante y consulta su envío al dueño.', ruta: '/revisiones-dueno', icono: FileText },
       { titulo: 'Reporte Rosticero', detalle: 'Reportes diarios de pollos rostizados.', ruta: '/rosticero', icono: ClipboardList },
       { titulo: 'Auditoría', detalle: 'Consulta el registro de actividad del sistema.', ruta: '/auditoria', icono: FileText },
     ],
@@ -81,8 +81,10 @@ const PANELES_POR_ROL = {
   },
   ayudante: {
     titulo: 'Panel de Ayudante',
-    responsabilidad: 'Las revisiones y multas son administradas exclusivamente por el superadministrador.',
-    accesos: [],
+    responsabilidad: 'Procesa los registros que te asigna el superadministrador y agrega únicamente la evidencia para enviarlos al dueño.',
+    accesos: [
+      { titulo: 'Revisiones asignadas', detalle: 'Agrega un video o su URL a cada registro pendiente.', ruta: '/ayudante/revisiones', icono: FileText },
+    ],
   },
 };
 

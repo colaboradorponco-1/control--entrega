@@ -24,6 +24,7 @@ const RegistroActividad = lazy(() => import('../modules/admin/RegistroActividad'
 const PlanillaSemanal = lazy(() => import('../modules/superadmin/PlanillaSemanal'));
 const CapturaPlanilla = lazy(() => import('../modules/superadmin/CapturaPlanilla'));
 const GestionRevisionesDueno = lazy(() => import('../modules/admin/GestionRevisionesDueno'));
+const BandejaRevisionesAyudante = lazy(() => import('../modules/admin/BandejaRevisionesAyudante'));
 const ReporteRosticero = lazy(() => import('../modules/rosticero/ReporteRosticero'));
 
 function CargandoRuta() {
@@ -218,6 +219,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute rolesPermitidos={['superadministrador']}>
               <GestionRevisionesDueno />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/ayudante/revisiones"
+          element={
+            <ProtectedRoute rolesPermitidos={['ayudante']}>
+              <BandejaRevisionesAyudante />
             </ProtectedRoute>
           }
         />
