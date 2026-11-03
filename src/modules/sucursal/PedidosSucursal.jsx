@@ -269,7 +269,7 @@ export default function PedidosSucursal() {
   }, []);
 
   useEffect(() => {
-    const filtro = perfil?.sucursal_id
+    const filtro = esSucursal && perfil?.sucursal_id
       ? { filter: `sucursal_id=eq.${perfil.sucursal_id}` }
       : {};
     const canal = supabase
@@ -286,7 +286,7 @@ export default function PedidosSucursal() {
     return () => {
       supabase.removeChannel(canal);
     };
-  }, [cargar, perfil?.sucursal_id]);
+  }, [cargar, esSucursal, perfil?.sucursal_id]);
 
   // Si el realtime no conecta, refrescamos igual cada 20 segundos.
   useEffect(() => {

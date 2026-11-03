@@ -161,6 +161,20 @@ export default function PanelNotificaciones({
                 {aviso.mensaje && (
                   <p className={`text-[12px] mt-1 ${suave}`}>{aviso.mensaje}</p>
                 )}
+                {aviso.monto_multa != null && (
+                  <p className="mt-1 text-[12px] font-bold text-red-500">
+                    Multa: Bs. {Number(aviso.monto_multa).toFixed(2)}
+                  </p>
+                )}
+                {(aviso.area_atencion_cliente || aviso.area_personal || aviso.area_comida || aviso.area_limpieza || aviso.area_infraestructura) && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {aviso.area_atencion_cliente && <span className="rounded bg-blue-500/10 px-1.5 py-0.5 text-[9px] font-bold text-blue-500">Atención al cliente</span>}
+                    {aviso.area_personal && <span className="rounded bg-purple-500/10 px-1.5 py-0.5 text-[9px] font-bold text-purple-500">Personal</span>}
+                    {aviso.area_comida && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">Comida</span>}
+                    {aviso.area_limpieza && <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-500">Limpieza</span>}
+                    {aviso.area_infraestructura && <span className="rounded bg-gray-500/10 px-1.5 py-0.5 text-[9px] font-bold text-gray-500">Infraestructura</span>}
+                  </div>
+                )}
                 {aviso.unidades_recibidas != null && (
                   <p className="text-[12px] mt-1 font-bold text-red-500">
                     Recibio {aviso.unidades_recibidas} de {aviso.unidades_pedidas} unidades

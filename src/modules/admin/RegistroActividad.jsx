@@ -2,7 +2,17 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../config/supabaseClient';
 import { useTheme } from '../../context/ThemeContext';
-import { ArrowLeft, RefreshCw, Search, Table, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  ArrowLeft, RefreshCw, Search, Table, AlertCircle, ChevronDown, ChevronUp,
+  ChevronLeft, ChevronRight,
+} from 'lucide-react';
+import {
+  inicioDiaISO,
+  inicioDiaSiguienteISO,
+  normalizarBusqueda,
+  POR_PAGINA,
+  rangoUltimos30Dias,
+} from '../../utils/filtrosHistorial';
 
 const COLOR_ACCION = {
   INSERT: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
@@ -39,30 +49,54 @@ export default function RegistroActividad() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
   const [busqueda, setBusqueda] = useState('');
+  const [busquedaAplicada, setBusquedaAplicada] = useState('');
   const [tablaFiltro, setTablaFiltro] = useState('todas');
   const [accionFiltro, setAccionFiltro] = useState('todas');
   const [abierto, setAbierto] = useState(null);
+  const [periodo, setPeriodo] = useState(rangoUltimos30Dias);
+  const [pagina, setPagina] = useState(0);
+  const [totalLogs, setTotalLogs] = useState(0);
 
-  const cargarLogs = useCallback(async () => {
+  const cargarLogs = useCallback(async (paginaSolicitada = pagina) => {
     setCargando(true);
     setError('');
-    const { data, error: err } = await supabase
+    let consulta = supabase
       .from('auditoria')
-      .select('*')
+      .select('*', { count: 'exact' })
       .order('creado_en', { ascending: false })
-      .limit(200);
+      .range(paginaSolicitada * POR_PAGINA, (paginaSolicitada + 1) * POR_PAGINA - 1);
+    if (periodo.desde) consulta = consulta.gte('creado_en', inicioDiaISO(periodo.desde));
+    if (periodo.hasta) consulta = consulta.lt('creado_en', inicioDiaSiguienteISO(periodo.hasta));
+    if (tablaFiltro !== 'todas') consulta = consulta.eq('tabla', tablaFiltro);
+    if (accionFiltro !== 'todas') consulta = consulta.eq('accion', accionFiltro);
+    const termino = normalizarBusqueda(busquedaAplicada);
+    if (termino) {
+      const filtros = [`usuario_nombre.ilike.%${termino}%`, `tabla.ilike.%${termino}%`];
+      if (/^\d+$/.test(termino)) filtros.push(`registro_id.eq.${termino}`);
+      consulta = consulta.or(filtros.join(','));
+    }
+    const { data, error: err, count } = await consulta;
 
     if (err) {
       setError(err.message || 'No se pudo cargar la auditoría.');
     } else {
       setLogs(data || []);
+      setTotalLogs(count || 0);
     }
     setCargando(false);
-  }, []);
+  }, [accionFiltro, busquedaAplicada, pagina, periodo, tablaFiltro]);
 
   useEffect(() => {
     cargarLogs();
   }, [cargarLogs]);
+
+  useEffect(() => {
+    const temporizador = window.setTimeout(() => {
+      setBusquedaAplicada(busqueda);
+      setPagina(0);
+    }, 300);
+    return () => window.clearTimeout(temporizador);
+  }, [busqueda]);
 
   const tablas = useMemo(
     () => [...new Set(logs.map((l) => l.tabla).filter(Boolean))].sort(),
@@ -122,14 +156,14 @@ export default function RegistroActividad() {
           <Search size={15} className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 ${muted}`} />
           <input
             value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
+            onChange={(e) => { setBusqueda(e.target.value); setPagina(0); }}
             className={`w-full rounded-xl border py-2 pl-9 pr-3 text-sm outline-none ${input}`}
             placeholder="Buscar usuario, tabla o ID..."
           />
         </div>
         <select
           value={tablaFiltro}
-          onChange={(e) => setTablaFiltro(e.target.value)}
+          onChange={(e) => { setTablaFiltro(e.target.value); setPagina(0); }}
           className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
         >
           <option value="todas">Todas las tablas</option>
@@ -137,7 +171,7 @@ export default function RegistroActividad() {
         </select>
         <select
           value={accionFiltro}
-          onChange={(e) => setAccionFiltro(e.target.value)}
+          onChange={(e) => { setAccionFiltro(e.target.value); setPagina(0); }}
           className={`rounded-xl border px-3 py-2 text-sm outline-none ${input}`}
         >
           <option value="todas">Todas las acciones</option>
@@ -145,7 +179,45 @@ export default function RegistroActividad() {
           <option value="UPDATE">Modificados</option>
           <option value="DELETE">Eliminados</option>
         </select>
+        <label className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${input}`}>
+          Desde
+          <input
+            type="date"
+            value={periodo.desde}
+            max={periodo.hasta}
+            onChange={(e) => { setPeriodo((actual) => ({ ...actual, desde: e.target.value })); setPagina(0); }}
+            className="min-w-0 bg-transparent text-sm outline-none"
+          />
+        </label>
+        <label className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${input}`}>
+          Hasta
+          <input
+            type="date"
+            value={periodo.hasta}
+            min={periodo.desde}
+            onChange={(e) => { setPeriodo((actual) => ({ ...actual, hasta: e.target.value })); setPagina(0); }}
+            className="min-w-0 bg-transparent text-sm outline-none"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setPeriodo(rangoUltimos30Dias());
+            setBusqueda('');
+            setBusquedaAplicada('');
+            setTablaFiltro('todas');
+            setAccionFiltro('todas');
+            setPagina(0);
+          }}
+          className={`rounded-xl border px-3 py-2 text-sm font-semibold ${input}`}
+        >
+          Limpiar filtros
+        </button>
       </div>
+
+      <p className={`mb-3 text-xs ${muted}`}>
+        Mostrando {logs.length} de {totalLogs} movimientos de los últimos 30 días o del período elegido.
+      </p>
 
       {error && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
@@ -171,7 +243,7 @@ export default function RegistroActividad() {
                 <td colSpan={6} className={`p-6 text-center ${muted}`}>Cargando actividad...</td>
               </tr>
             )}
-            {!cargando && filtrados.length === 0 && (
+            {!cargando && totalLogs === 0 && (
               <tr>
                 <td colSpan={6} className={`p-6 text-center ${muted}`}>No hay movimientos para mostrar.</td>
               </tr>
@@ -211,6 +283,32 @@ export default function RegistroActividad() {
           </tbody>
         </table>
       </div>
+
+      {!cargando && totalLogs > POR_PAGINA && (
+        <div className={`mt-4 flex items-center justify-between ${muted}`}>
+          <span className="text-xs">Página {pagina + 1} de {Math.ceil(totalLogs / POR_PAGINA)}</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={pagina === 0}
+              onClick={() => setPagina((actual) => actual - 1)}
+              className={`rounded-lg border p-2 disabled:opacity-40 ${input}`}
+              aria-label="Página anterior"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              type="button"
+              disabled={(pagina + 1) * POR_PAGINA >= totalLogs}
+              onClick={() => setPagina((actual) => actual + 1)}
+              className={`rounded-lg border p-2 disabled:opacity-40 ${input}`}
+              aria-label="Página siguiente"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {abierto != null && (() => {
         const log = filtrados.find((l) => l.id === abierto);

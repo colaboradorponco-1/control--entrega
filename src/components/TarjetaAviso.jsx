@@ -36,6 +36,8 @@ const TIPOS = {
   },
 };
 
+const TIPOS_REVISION = new Set(['MULTA', 'REVISION', 'OBSERVACION', 'ALERTA', 'INFO']);
+
 const fechaLarga = (valor) => {
   if (!valor) return '';
   const fecha = new Date(valor);
@@ -78,6 +80,12 @@ export default function TarjetaAviso({
     clase: 'bg-gray-500/15 text-gray-500 border-gray-500/30',
     icono: Package,
   };
+  const tipoAviso = String(aviso.tipo || aviso.tipo_notificacion || '').toUpperCase();
+  const etiquetaAbrir = tipoAviso === 'MULTA'
+    ? 'Ver la multa'
+    : TIPOS_REVISION.has(tipoAviso)
+      ? 'Ver el aviso'
+      : 'Ver el pedido';
   const IconoTipo = tipo.icono;
 
   const fotos = [
@@ -109,6 +117,12 @@ export default function TarjetaAviso({
 
       {aviso.mensaje && (
         <p className={`mt-2 text-sm ${texto}`}>{aviso.mensaje}</p>
+      )}
+
+      {aviso.monto_multa != null && (
+        <p className="mt-2 text-sm font-bold text-red-500">
+          Monto de multa: Bs. {Number(aviso.monto_multa).toFixed(2)}
+        </p>
       )}
 
       {(aviso.area_atencion_cliente || aviso.area_personal || aviso.area_comida || aviso.area_limpieza || aviso.area_infraestructura) && (
@@ -247,7 +261,7 @@ export default function TarjetaAviso({
             onClick={() => onAbrir(aviso)}
             className="rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[11px] font-bold text-amber-600 transition hover:bg-amber-500/25"
           >
-            Ver el pedido
+            {etiquetaAbrir}
           </button>
         )}
       </div>

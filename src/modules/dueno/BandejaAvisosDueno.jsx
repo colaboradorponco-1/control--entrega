@@ -51,6 +51,11 @@ export default function BandejaAvisosDueno() {
 
   const abrirPedido = async (aviso) => {
     if (!aviso.leido) await marcarLeida(aviso);
+    const tipo = String(aviso.tipo || aviso.tipo_notificacion || '').toUpperCase();
+    if (['MULTA', 'REVISION', 'OBSERVACION', 'ALERTA', 'INFO'].includes(tipo)) {
+      navigate('/mis-sucursales', { state: { seccionInicial: 'revisiones' } });
+      return;
+    }
     const destino = aviso.pedido_id ? `/mis-sucursales?pedido=${aviso.pedido_id}` : '/mis-sucursales';
     navigate(destino);
   };

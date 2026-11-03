@@ -15,7 +15,7 @@ const TITULOS = {
 };
 
 const CAMPOS_VENTA = [
-  { campo: 'unidades', titulo: 'Unidades', decimales: 0 },
+  { campo: 'unidades', titulo: 'Unidades vendidas', decimales: 0 },
   { campo: 'transacciones', titulo: 'Transacciones', decimales: 0 },
   { campo: 'importeBs', titulo: 'Total (Bs)', decimales: 2 },
 ];

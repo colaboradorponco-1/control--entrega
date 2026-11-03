@@ -1,27 +1,4 @@
--- ============================================================
--- ARREGLO DEL INVENTARIO DIARIO
---
--- 1) BUG QUE ROMPIA EL SISTEMA
---    "null value in column kilos_iniciales violates not-null"
---    SELECT ... INTO con LIMIT 1 y sin filas asigna NULL a la
---    variable (el COALESCE no ayuda: no hay fila que evaluar).
---    pasaba al registrar la primera recepcion o el primer despacho,
---    porque no existia un dia previo del cual copiar el saldo.
---
--- 2) BUG DE UNIDADES
---    unidades_saldo sumaba lo recibido y nunca restaba lo
---    despachado, asi que el stock en unidades solo subia.
---
--- 3) FECHAS ANTIGUAS
---    al cargar un movimiento con fecha pasada solo se recalculaba
---    ese dia; los dias siguientes quedaban con el saldo viejo.
---
--- Ejecutar en Supabase > SQL Editor
--- ============================================================
 
--- ------------------------------------------------------------
--- 1) RECALCULO DE UN DIA
--- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.recalcular_inventario(p_fecha DATE)
 RETURNS VOID AS $$
 DECLARE
