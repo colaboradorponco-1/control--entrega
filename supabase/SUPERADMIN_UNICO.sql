@@ -1,16 +1,7 @@
 BEGIN;
 
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM public.roles WHERE nombre = 'superadmin') THEN
-    RAISE EXCEPTION
-      'Ejecuta supabase/RENOMBRAR_SUPERADMINISTRADOR.sql antes de esta migracion.';
-  END IF;
-END;
-$$;
-
 INSERT INTO public.roles (nombre)
-VALUES ('superadministrador')
+VALUES ('superadmin')
 ON CONFLICT (nombre) DO NOTHING;
 
 DO $$
@@ -21,11 +12,11 @@ BEGIN
     INTO v_cantidad
     FROM public.perfiles_usuario p
     JOIN public.roles r ON r.id = p.rol_id
-   WHERE r.nombre = 'superadministrador';
+   WHERE r.nombre = 'superadmin';
 
   IF v_cantidad > 1 THEN
     RAISE EXCEPTION
-      'Ya existen % usuarios con rol superadministrador. Deja solo uno antes de volver a ejecutar esta migracion.',
+      'Ya existen % usuarios con rol superadmin. Deja solo uno antes de volver a ejecutar esta migracion.',
       v_cantidad;
   END IF;
 END;
@@ -43,7 +34,7 @@ BEGIN
   SELECT id
     INTO v_rol_superadmin
     FROM public.roles
-   WHERE nombre = 'superadministrador';
+   WHERE nombre = 'superadmin';
 
   IF NEW.rol_id IS DISTINCT FROM v_rol_superadmin THEN
     RETURN NEW;
@@ -57,7 +48,7 @@ BEGIN
      WHERE p.rol_id = v_rol_superadmin
        AND p.id IS DISTINCT FROM NEW.id
   ) THEN
-    RAISE EXCEPTION 'Solo puede haber un usuario con rol superadministrador.'
+    RAISE EXCEPTION 'Solo puede haber un usuario con rol superadmin.'
       USING ERRCODE = '23505';
   END IF;
 
@@ -81,7 +72,7 @@ STABLE
 SET search_path = public, pg_temp
 AS $$
   SELECT CASE
-           WHEN r.nombre = 'superadministrador' THEN 'administrador'
+           WHEN r.nombre = 'superadmin' THEN 'administrador'
            ELSE r.nombre
          END
     FROM public.perfiles_usuario p
@@ -102,7 +93,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = auth.uid()
-       AND r.nombre = 'superadministrador'
+       AND r.nombre = 'superadmin'
   );
 $$;
 
@@ -119,7 +110,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = p_usuario_id
-       AND r.nombre IN ('administrador', 'superadministrador')
+       AND r.nombre IN ('administrador', 'superadmin')
   );
 $$;
 
@@ -136,7 +127,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = p_usuario_id
-       AND r.nombre = 'superadministrador'
+       AND r.nombre = 'superadmin'
   );
 $$;
 
@@ -167,7 +158,7 @@ BEGIN
     SELECT EXISTS (
       SELECT 1 FROM public.roles
        WHERE id = OLD.rol_id
-         AND nombre = 'superadministrador'
+         AND nombre = 'superadmin'
     ) INTO v_es_superadmin_objetivo;
 
     IF v_es_superadmin_objetivo
@@ -175,7 +166,7 @@ BEGIN
          NEW.rol_id IS DISTINCT FROM OLD.rol_id
          OR to_jsonb(NEW)->'activo' IS DISTINCT FROM to_jsonb(OLD)->'activo'
        ) THEN
-      RAISE EXCEPTION 'No se puede cambiar el rol o estado de la cuenta única de superadministrador.'
+      RAISE EXCEPTION 'No se puede cambiar el rol o estado de la cuenta única de superadmin.'
         USING ERRCODE = '42501';
     END IF;
   END IF;
@@ -187,7 +178,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.roles
      WHERE id = NEW.rol_id
-       AND nombre IN ('administrador', 'superadministrador')
+       AND nombre IN ('administrador', 'superadmin')
   ) INTO v_nuevo_privilegiado;
 
   IF TG_OP = 'INSERT' THEN
@@ -201,7 +192,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.roles
      WHERE id = OLD.rol_id
-       AND nombre IN ('administrador', 'superadministrador')
+       AND nombre IN ('administrador', 'superadmin')
   ) INTO v_anterior_privilegiado;
 
   IF NEW.rol_id IS DISTINCT FROM OLD.rol_id
@@ -223,32 +214,32 @@ CREATE TRIGGER perfiles_usuario_proteger_roles_administrativos
   FOR EACH ROW
   EXECUTE FUNCTION public.proteger_roles_administrativos();
 
-CREATE OR REPLACE FUNCTION public.impedir_escritura_pedidos_superadmin()
+CREATE OR REPLACE FUNCTION public.impedir_aprobacion_pedido_superadmin()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
-  IF public.get_user_es_superadmin() THEN
-    RAISE EXCEPTION 'El Superadmin solo puede consultar pedidos.'
+  IF public.get_user_es_superadmin()
+     AND OLD.estado = 'PENDIENTE'
+     AND NEW.estado = 'APROBADO' THEN
+    RAISE EXCEPTION 'El Superadmin puede consultar pedidos, pero no aprobarlos.'
       USING ERRCODE = '42501';
   END IF;
 
-  IF TG_OP = 'DELETE' THEN
-    RETURN OLD;
-  END IF;
   RETURN NEW;
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.impedir_escritura_pedidos_superadmin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.impedir_aprobacion_pedido_superadmin() FROM PUBLIC;
 DROP TRIGGER IF EXISTS pedidos_impedir_aprobacion_superadmin ON public.pedidos;
 DROP TRIGGER IF EXISTS pedidos_impedir_escritura_superadmin ON public.pedidos;
-CREATE TRIGGER pedidos_impedir_escritura_superadmin
-  BEFORE INSERT OR UPDATE OR DELETE ON public.pedidos
+DROP FUNCTION IF EXISTS public.impedir_escritura_pedidos_superadmin();
+CREATE TRIGGER pedidos_impedir_aprobacion_superadmin
+  BEFORE UPDATE OF estado ON public.pedidos
   FOR EACH ROW
-  EXECUTE FUNCTION public.impedir_escritura_pedidos_superadmin();
+  EXECUTE FUNCTION public.impedir_aprobacion_pedido_superadmin();
 
 DROP POLICY IF EXISTS perfiles_update ON public.perfiles_usuario;
 DROP POLICY IF EXISTS perfiles_admin ON public.perfiles_usuario;

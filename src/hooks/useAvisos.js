@@ -4,9 +4,11 @@ import { notificacionesRepository } from '../repositories/notificacionesReposito
 import { evidenciasRepository } from '../repositories/evidenciasRepository';
 import { supabase } from '../config/supabaseClient';
 
-const rutasDeFotos = (aviso) => [
+const rutasDeEvidencia = (aviso) => [
   ...(aviso.fotos_observaciones || []),
   ...(aviso.fotos_extra || []),
+  ...(aviso.videos || []),
+  aviso.documento_url,
   aviso.foto_url,
   aviso.firma_url,
 ].filter(Boolean);
@@ -15,7 +17,7 @@ const rutasDeFotos = (aviso) => [
  * Avisos del administrador.
  *
  * Los carga, escucha los que llegan en vivo por realtime y pide
- * los enlaces con caducidad de las fotos (el bucket es privado).
+ * los enlaces con caducidad de las evidencias (el bucket es privado).
  * Lo usan la campana del panel y la bandeja completa.
  */
 export function useAvisos() {
@@ -77,10 +79,9 @@ export function useAvisos() {
     };
   }, [usuario?.id, idInstancia, cargar]);
 
-  // Las fotos viven en un bucket privado: hay que pedir un enlace
-  // con caducidad para poderlas mostrar.
+  // Las evidencias viven en un bucket privado: pedir enlaces temporales.
   useEffect(() => {
-    const rutas = [...new Set(avisos.flatMap(rutasDeFotos))];
+    const rutas = [...new Set(avisos.flatMap(rutasDeEvidencia))];
     if (rutas.length === 0) {
       setUrls({});
       return undefined;
@@ -91,7 +92,8 @@ export function useAvisos() {
       const pares = await Promise.all(
         rutas.map(async (ruta) => {
           try {
-            return [ruta, await evidenciasRepository.url(ruta)];
+            const url = /^https?:\/\//i.test(ruta) ? ruta : await evidenciasRepository.url(ruta);
+            return [ruta, url];
           } catch {
             return [ruta, null];
           }

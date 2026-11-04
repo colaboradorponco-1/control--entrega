@@ -110,7 +110,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
 CREATE OR REPLACE FUNCTION public.get_user_rol()
 RETURNS TEXT AS $$
   SELECT CASE
-           WHEN r.nombre = 'superadministrador' THEN 'administrador'
+           WHEN r.nombre = 'superadmin' THEN 'administrador'
            ELSE r.nombre
          END
     FROM public.perfiles_usuario p
@@ -130,7 +130,7 @@ DECLARE
 BEGIN
   SELECT id INTO v_rol_superadmin
     FROM public.roles
-   WHERE nombre = 'superadministrador';
+   WHERE nombre = 'superadmin';
 
   IF NEW.rol_id IS DISTINCT FROM v_rol_superadmin THEN
     RETURN NEW;
@@ -143,7 +143,7 @@ BEGIN
      WHERE p.rol_id = v_rol_superadmin
        AND p.id IS DISTINCT FROM NEW.id
   ) THEN
-    RAISE EXCEPTION 'Solo puede haber un usuario con rol superadministrador.'
+    RAISE EXCEPTION 'Solo puede haber un usuario con rol superadmin.'
       USING ERRCODE = '23505';
   END IF;
 
@@ -168,7 +168,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = auth.uid()
-       AND r.nombre = 'superadministrador'
+       AND r.nombre = 'superadmin'
   );
 $$;
 
@@ -185,7 +185,7 @@ AS $$
       FROM public.perfiles_usuario p
       JOIN public.roles r ON r.id = p.rol_id
      WHERE p.usuario_id = p_usuario_id
-       AND r.nombre IN ('administrador', 'superadministrador')
+       AND r.nombre IN ('administrador', 'superadmin')
   );
 $$;
 
@@ -206,7 +206,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.roles
      WHERE id = NEW.rol_id
-       AND nombre IN ('administrador', 'superadministrador')
+       AND nombre IN ('administrador', 'superadmin')
   ) INTO v_nuevo_privilegiado;
 
   IF TG_OP = 'INSERT' THEN
@@ -220,7 +220,7 @@ BEGIN
   SELECT EXISTS (
     SELECT 1 FROM public.roles
      WHERE id = OLD.rol_id
-       AND nombre IN ('administrador', 'superadministrador')
+       AND nombre IN ('administrador', 'superadmin')
   ) INTO v_anterior_privilegiado;
 
   IF NEW.rol_id IS DISTINCT FROM OLD.rol_id
@@ -534,7 +534,7 @@ CREATE POLICY auditoria_read ON public.auditoria
 -- PASO 8: Datos iniciales
 -- ------------------------------------------------------------
 INSERT INTO public.roles (nombre) VALUES
-  ('administrador'), ('superadministrador'), ('operador_planta'), ('despachador'), ('sucursal')
+  ('administrador'), ('superadmin'), ('operador_planta'), ('despachador'), ('sucursal')
 ON CONFLICT (nombre) DO NOTHING;
 
 INSERT INTO public.sucursales (nombre, sector) VALUES

@@ -15,7 +15,17 @@ const CLAVE_BLOQUEO = 'pollo:login:bloqueado';
 const MAX_INTENTOS = 4;
 const SEGUNDOS_BLOQUEO = 60;
 
-const ROLES_VALIDOS = ['administrador', 'superadministrador', 'operador_planta', 'despachador', 'sucursal', 'dueno', 'rosticero', 'ayudante'];
+const ROLES_VALIDOS = [
+  'administrador',
+  'superadmin',
+  'superadministrador',
+  'operador_planta',
+  'despachador',
+  'sucursal',
+  'dueno',
+  'rosticero',
+  'ayudante',
+];
 
 const leer = (clave) => {
   try {

@@ -8,13 +8,14 @@ import { evidenciasRepository } from '../../repositories/evidenciasRepository';
 import { supabase } from '../../config/supabaseClient';
 import {
   LogOut, Sun, Moon, X, ArrowLeft, CheckCircle, AlertCircle,
-  ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban, Boxes,
+  ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban, Boxes, Store,
   Camera, FileCheck2, Images, RefreshCw, Inbox,
   History, XCircle, ChevronDown, Archive, ArchiveRestore, Trash2,
   Search, Download
 } from 'lucide-react';
 import FotosObservaciones from '../../components/FotosObservaciones';
 import FormularioRecepcion from '../../components/FormularioRecepcion';
+import EntregasDirectas from './EntregasDirectas';
 import PanelNotificaciones from '../../components/PanelNotificaciones';
 import ModalConfirmar from '../../components/ModalConfirmar';
 import Skeleton from '../../components/Skeleton';
@@ -226,7 +227,7 @@ export default function PedidosSucursal() {
           : 'bg-gray-50 border-gray-300 text-gray-500 hover:bg-gray-100'
     }`;
   const esSucursal = perfil?.roles?.nombre === 'sucursal';
-  const esVistaAdmin = ['administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
+  const esVistaAdmin = ['administrador', 'superadmin'].includes(perfil?.roles?.nombre);
   const esAdmin = perfil?.roles?.nombre === 'administrador';
   // El reporte de entrega es del administrador: el superadministrador no lo ve.
   const esAdminReporte = perfil?.roles?.nombre === 'administrador';
@@ -1517,6 +1518,8 @@ export default function PedidosSucursal() {
                 <h1 className={`text-base md:text-xl font-black tracking-tight truncate ${strong}`}>
                   {vista === 'historial'
                     ? 'Historial de pedidos'
+                    : vista === 'entregas'
+                      ? 'Entregas directas'
                     : vista === 'inventario'
                       ? 'Inventario diario'
                     : esVistaAdmin
@@ -1600,6 +1603,15 @@ export default function PedidosSucursal() {
             >
               <History size={15} /> Historial de pedidos
             </button>
+            {esSucursal && (
+              <button
+                type="button"
+                onClick={() => setVista('entregas')}
+                className={tabClase(vista === 'entregas')}
+              >
+                <Store size={15} /> Entregas directas
+              </button>
+            )}
             {esSucursal && (
               <button
                 type="button"
@@ -1811,6 +1823,8 @@ export default function PedidosSucursal() {
               </div>
             )}
           </section>
+        ) : vista === 'entregas' && esSucursal ? (
+          <EntregasDirectas />
         ) : vista === 'inventario' && esSucursal ? (
           <InventarioDiarioSucursal
             sucursalId={perfil?.sucursal_id}

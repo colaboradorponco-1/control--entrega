@@ -110,7 +110,7 @@ export default function AppRouter() {
         <Route
           path="/admin/pedidos"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador']} excluirSuperadmin>
               <PedidosAdmin />
             </ProtectedRoute>
           }
@@ -136,7 +136,7 @@ export default function AppRouter() {
         <Route
           path="/avisos"
           element={
-            <ProtectedRoute rolesPermitidos={['administrador']}>
+            <ProtectedRoute rolesPermitidos={['administrador']} excluirSuperadmin>
               <BandejaAvisos />
             </ProtectedRoute>
           }
@@ -257,6 +257,7 @@ export default function AppRouter() {
           }
         />
 
+        <Route path="*" element={<Navigate to="/panel" replace />} />
       </Routes>
       </Suspense>
     </BrowserRouter>

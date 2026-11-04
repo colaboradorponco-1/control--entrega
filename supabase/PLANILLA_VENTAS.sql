@@ -10,7 +10,7 @@ AS $$
     FROM public.perfiles_usuario p
     JOIN public.roles r ON r.id = p.rol_id
     WHERE p.usuario_id = auth.uid()
-      AND r.nombre = 'superadministrador'
+      AND r.nombre = 'superadmin'
   );
 $$;
 CREATE TABLE IF NOT EXISTS public.planilla_ventas (

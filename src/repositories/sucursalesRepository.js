@@ -23,6 +23,7 @@ export const sucursalesRepository = {
     return [...new Set((data || []).map((s) => s.sector).filter(Boolean))];
   },
 
+  // Cuenta pedidos ademas de despachos: pedidos.sucursal_id usa ON DELETE RESTRICT.
   async contarUsos(id) {
     const [despachos, pedidos, perfiles] = await Promise.all([
       supabase

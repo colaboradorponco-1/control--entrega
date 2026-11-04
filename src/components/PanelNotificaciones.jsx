@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAvisos } from '../hooks/useAvisos';
-import { Bell, X, CheckCheck, Package, Loader2, Inbox, Video, FileText } from 'lucide-react';
+import { Bell, X, CheckCheck, Package, Loader2, Inbox, Video, FileText, ImageIcon } from 'lucide-react';
 
 const fechaCorta = (valor) => {
   if (!valor) return '';
@@ -17,12 +17,14 @@ const fechaCorta = (valor) => {
   });
 };
 
+const fotosDelAviso = (aviso) => [...new Set([
+  ...(aviso.fotos_observaciones || []),
+  ...(aviso.fotos_extra || []),
+  aviso.foto_url,
+].filter(Boolean))];
+
 /**
- * Campana de avisos.
- *
- * Se usa en el panel del administrador y en el panel de sucursal.
- * La lista completa vive en una bandeja aparte; aqui solo va el
- * resumen rapido.
+ * Campana configurable para los distintos paneles y tipos de aviso.
  */
 export default function PanelNotificaciones({
   titulo = 'Avisos de las sucursales',
@@ -34,7 +36,7 @@ export default function PanelNotificaciones({
 }) {
   const { darkMode } = useTheme();
   const navigate = useNavigate();
-  const { avisos, cargando, error, marcarLeida, marcarTodas } = useAvisos();
+  const { avisos, urls, cargando, error, marcarLeida, marcarTodas } = useAvisos();
   const [abierto, setAbierto] = useState(false);
   const contenedorRef = useRef(null);
 
@@ -144,9 +146,17 @@ export default function PanelNotificaciones({
             )}
 
             {avisos.map((aviso) => (
-              <button
+              <div
                 key={aviso.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => abrirAviso(aviso)}
+                onKeyDown={(evento) => {
+                  if (evento.key === 'Enter' || evento.key === ' ') {
+                    evento.preventDefault();
+                    abrirAviso(aviso);
+                  }
+                }}
                 className={`w-full text-left px-4 py-3 border-b transition hover:bg-black/5 ${borde} ${
                   aviso.leido ? 'opacity-70' : ''
                 }`}
@@ -190,12 +200,13 @@ export default function PanelNotificaciones({
                     <span className={`flex items-center gap-1 text-[10px] font-bold ${suave}`}>
                       <Video size={11} /> {aviso.videos.length} video(s)
                     </span>
-                    {aviso.videos.map((url, idx) => (
+                    {aviso.videos.map((ruta, idx) => (
                       <a
-                        key={url}
-                        href={url}
+                        key={ruta}
+                        href={urls[ruta] || ruta}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(evento) => evento.stopPropagation()}
                         className="flex items-center gap-1 rounded-lg bg-blue-500/15 px-2 py-1 text-[10px] font-bold text-blue-600 transition hover:bg-blue-500/25"
                       >
                         <Video size={10} /> Video {idx + 1}
@@ -203,17 +214,36 @@ export default function PanelNotificaciones({
                     ))}
                   </div>
                 )}
+                {fotosDelAviso(aviso).length > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                    <span className={`flex items-center gap-1 text-[10px] font-bold ${suave}`}>
+                      <ImageIcon size={11} /> {fotosDelAviso(aviso).length} foto
+                      {fotosDelAviso(aviso).length === 1 ? '' : 's'}
+                    </span>
+                    {fotosDelAviso(aviso).map((ruta) => (
+                      <img
+                        key={ruta}
+                        src={urls[ruta] || ''}
+                        alt="Foto del reporte"
+                        className={`h-9 w-9 rounded-lg object-cover border ${borde} ${
+                          urls[ruta] ? '' : 'hidden'
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
                 {aviso.documento_url && (
                   <a
-                    href={aviso.documento_url}
+                    href={urls[aviso.documento_url] || aviso.documento_url}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(evento) => evento.stopPropagation()}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-2.5 py-1 text-[10px] font-bold text-amber-600 transition hover:bg-amber-500/25"
                   >
                     <FileText size={10} /> Ver documento
                   </a>
                 )}
-              </button>
+              </div>
             ))}
           </div>
 

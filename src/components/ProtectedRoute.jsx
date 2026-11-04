@@ -3,7 +3,11 @@ import { useAuth } from '../context/AuthContext';
 import { authRepository } from '../repositories/AuthRepository';
 import { useMemo } from 'react';
 
-export default function ProtectedRoute({ children, rolesPermitidos }) {
+/**
+ * Permite al superadministrador acceder a las rutas de administrador,
+ * salvo las rutas que lo excluyen explícitamente.
+ */
+export default function ProtectedRoute({ children, rolesPermitidos, excluirSuperadmin }) {
   const { usuario, perfil, perfilError, cargando, sesionExpirada } = useAuth();
 
   // El aviso viaja en el state de la navegacion. Se memoiza para que
@@ -13,7 +17,6 @@ export default function ProtectedRoute({ children, rolesPermitidos }) {
     () => ({ aviso: sesionExpirada ? 'Tu sesión expiró. Vuelve a iniciar sesión.' : null }),
     [sesionExpirada]
   );
-
   if (cargando) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -59,7 +62,16 @@ export default function ProtectedRoute({ children, rolesPermitidos }) {
   }
 
   const rolActual = perfil.roles?.nombre;
-  if (rolesPermitidos && !rolesPermitidos.includes(rolActual)) {
+  const esSuperadmin = ['superadmin', 'superadministrador'].includes(rolActual);
+  const superadminPermitido = esSuperadmin
+    && !excluirSuperadmin
+    && (
+      rolesPermitidos?.includes('administrador')
+      || rolesPermitidos?.includes('superadministrador')
+      || rolesPermitidos?.includes('superadmin')
+    );
+
+  if (rolesPermitidos && !rolesPermitidos.includes(rolActual) && !superadminPermitido) {
     return <Navigate to="/panel" replace />;
   }
 

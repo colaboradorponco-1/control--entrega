@@ -7,6 +7,7 @@ import { authRepository } from '../repositories/AuthRepository';
 import FirmaCanvas from './FirmaCanvas';
 import SelectorFoto from './SelectorFoto';
 import FotosObservaciones from './FotosObservaciones';
+import MapaUbicacion from './MapaUbicacion';
 import {
   LogOut, Sun, Moon, ArrowLeft, CheckCircle, AlertCircle,
   PackageCheck, Loader2, Store, CalendarDays, ShoppingCart, X, Truck,
@@ -94,7 +95,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
   }, [cargar]);
 
   useEffect(() => {
-    if (!['operador_planta', 'administrador', 'superadministrador'].includes(perfil?.roles?.nombre)) return undefined;
+    if (!['operador_planta', 'administrador', 'superadmin'].includes(perfil?.roles?.nombre)) return undefined;
 
     let vigente = true;
     const actualizarDisponibilidad = async () => {
@@ -286,7 +287,7 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
   );
 
   const pendientesAccion = pedidos.filter((p) => acciones.some((a) => a.estado === p.estado)).length;
-  const puedeVerInventario = ['operador_planta', 'administrador', 'superadministrador'].includes(perfil?.roles?.nombre);
+  const puedeVerInventario = ['operador_planta', 'administrador', 'superadmin'].includes(perfil?.roles?.nombre);
 
   const actualizarInventario = async () => {
     try {
@@ -699,6 +700,11 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                 theme={{ borde: input, texto: label, tenue: muted, hoja: card }}
               />
 
+              <MapaUbicacion
+                valor={ubicacion}
+                onCambio={setUbicacion}
+                theme={{ borde: input, texto: label, tenue: muted, hoja: card, pin: '#06b6d4', oscuro: darkMode }}
+              />
 
               <div className="flex gap-3 pt-1">
                 <button

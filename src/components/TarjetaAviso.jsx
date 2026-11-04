@@ -218,10 +218,10 @@ export default function TarjetaAviso({
           <span className={`flex items-center gap-1 text-[10px] font-bold ${tenue}`}>
             <Video size={11} /> Videos
           </span>
-          {aviso.videos.map((url, idx) => (
+          {aviso.videos.map((ruta, idx) => (
             <a
-              key={url}
-              href={url}
+              key={ruta}
+              href={urls[ruta] || ruta}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 rounded-lg bg-blue-500/15 px-2.5 py-1.5 text-[10px] font-bold text-blue-600 transition hover:bg-blue-500/25"
@@ -235,7 +235,7 @@ export default function TarjetaAviso({
       {aviso.documento_url && (
         <div className="mt-2.5">
           <a
-            href={aviso.documento_url}
+            href={urls[aviso.documento_url] || aviso.documento_url}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 px-2.5 py-1.5 text-[10px] font-bold text-amber-600 transition hover:bg-amber-500/25"

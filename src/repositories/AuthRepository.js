@@ -15,7 +15,6 @@ export const consumirLogoutSolicitado = () => {
 export const limpiarLogoutSolicitado = () => {
   logoutSolicitado = false;
 };
-
 // Usuario sin perfil: un rol sin permisos (fail closed).
 const sinPerfil = () => ({
   id: null,

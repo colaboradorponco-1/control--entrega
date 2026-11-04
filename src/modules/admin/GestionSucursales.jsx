@@ -187,7 +187,7 @@ export default function GestionSucursales() {
 
       if (partes.length > 0) {
         const listado = partes.length === 1 ? partes[0] : partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1];
-        setMensaje({ tipo: 'error', texto: `No se puede eliminar "${s.nombre}": tiene ${listado}. Borrarla rompería el historial.` });
+        setMensaje({ tipo: 'error', texto: `No se puede eliminar "${s.nombre}": tiene ${listado}. Borrarla rompería el historial de esos registros. Si dejó de operar, conviene dejarla y no borrarla.` });
         return;
       }
 
@@ -207,7 +207,7 @@ export default function GestionSucursales() {
             setMensaje({
               tipo: 'error',
               texto: violoFk
-                ? `No se puede eliminar "${s.nombre}" porque tiene registros asociados.`
+                ? `No se puede eliminar "${s.nombre}" porque tiene registros asociados (pedidos o despachos) y borrarla rompería el historial.`
                 : (err.message || 'No se pudo eliminar'),
             });
           } finally {

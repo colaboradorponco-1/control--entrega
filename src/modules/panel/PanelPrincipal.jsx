@@ -96,7 +96,9 @@ export default function PanelPrincipal() {
   const { darkMode, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [editandoPerfil, setEditandoPerfil] = useState(false);
-  const panel = PANELES_POR_ROL[perfil?.roles?.nombre];
+  const rolPerfil = perfil?.roles?.nombre;
+  const rolNormalizado = rolPerfil === 'superadmin' ? 'superadministrador' : rolPerfil;
+  const panel = PANELES_POR_ROL[rolNormalizado];
   const rolLabel = perfil?.roles?.nombre?.replaceAll('_', ' ') || 'Usuario';
 
   const card = darkMode ? 'border-slate-800 bg-slate-900' : 'border-gray-200 bg-white';

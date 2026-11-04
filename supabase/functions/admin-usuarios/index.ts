@@ -80,12 +80,12 @@ Deno.serve(async (req) => {
     if (errorRol) {
       return reply({ error: 'No se pudo verificar el rol: ' + errorRol.message }, 400)
     }
-    if (!rol || !['administrador', 'superadministrador'].includes(rol.nombre)) {
-      return reply({ error: 'Solo un administrador o superadministrador puede gestionar usuarios' }, 403)
+    if (!rol || !['administrador', 'superadmin'].includes(rol.nombre)) {
+      return reply({ error: 'Solo un administrador o superadmin puede gestionar usuarios' }, 403)
     }
 
     const body = await req.json()
-    const esSuperadmin = rol.nombre === 'superadministrador'
+    const esSuperadmin = rol.nombre === 'superadmin'
     const accionesSobreUsuario = ['actualizar_correo', 'eliminar', 'desactivar', 'reactivar', 'resetear']
 
     if (accionesSobreUsuario.includes(body.accion) && body.id) {
@@ -100,8 +100,8 @@ Deno.serve(async (req) => {
       }
       const rolObjetivo = usuarioObjetivo?.roles?.nombre
       if (!rolObjetivo) return reply({ error: 'No se encontró el rol del usuario' }, 404)
-      if (rolObjetivo === 'superadministrador') {
-        return reply({ error: 'La cuenta única de superadministrador no se puede gestionar desde Usuarios' }, 403)
+      if (rolObjetivo === 'superadmin') {
+        return reply({ error: 'La cuenta única de superadmin no se puede gestionar desde Usuarios' }, 403)
       }
 
       if (body.id === authData.user.id) {
@@ -111,8 +111,8 @@ Deno.serve(async (req) => {
         }
       } else {
         const objetivoPermitido = esSuperadmin
-          ? rolObjetivo !== 'superadministrador'
-          : !['administrador', 'superadministrador'].includes(rolObjetivo)
+          ? rolObjetivo !== 'superadmin'
+          : !['administrador', 'superadmin'].includes(rolObjetivo)
         if (!objetivoPermitido) {
           return reply({ error: 'No tienes permiso para gestionar una cuenta con ese rol' }, 403)
         }
@@ -132,8 +132,8 @@ Deno.serve(async (req) => {
         (perfiles || [])
           .filter((item) => (
             esSuperadmin
-              ? item.roles.nombre !== 'superadministrador'
-              : !['administrador', 'superadministrador'].includes(item.roles.nombre)
+              ? item.roles.nombre !== 'superadmin'
+              : !['administrador', 'superadmin'].includes(item.roles.nombre)
           ))
           .map((item) => item.usuario_id)
       )
@@ -202,8 +202,8 @@ Deno.serve(async (req) => {
       if (errorRol) return reply({ error: 'No se pudo verificar el rol: ' + errorRol.message }, 400)
       if (!rol) return reply({ error: 'El rol seleccionado no existe' }, 400)
       const rolPermitido = esSuperadmin
-        ? rol.nombre !== 'superadministrador'
-        : !['administrador', 'superadministrador'].includes(rol.nombre)
+        ? rol.nombre !== 'superadmin'
+        : !['administrador', 'superadmin'].includes(rol.nombre)
       if (!rolPermitido) {
         return reply({ error: 'No tienes permiso para crear una cuenta con ese rol' }, 403)
       }
