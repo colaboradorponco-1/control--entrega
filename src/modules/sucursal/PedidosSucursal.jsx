@@ -8,7 +8,7 @@ import { evidenciasRepository } from '../../repositories/evidenciasRepository';
 import { supabase } from '../../config/supabaseClient';
 import {
   LogOut, Sun, Moon, X, ArrowLeft, CheckCircle, AlertCircle,
-  ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban,
+  ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban, Boxes,
   Camera, FileCheck2, Images, RefreshCw, Inbox,
   History, XCircle, ChevronDown, Archive, ArchiveRestore, Trash2,
   Search, Download
@@ -18,6 +18,8 @@ import FormularioRecepcion from '../../components/FormularioRecepcion';
 import PanelNotificaciones from '../../components/PanelNotificaciones';
 import ModalConfirmar from '../../components/ModalConfirmar';
 import Skeleton from '../../components/Skeleton';
+import { stockCrudoActualSucursal } from '../../utils/inventarioSucursal';
+import InventarioDiarioSucursal from './InventarioDiarioSucursal';
 
 const ESTADOS = {
   PENDIENTE: { label: 'Pendiente', badge: 'bg-amber-500/10 text-amber-500 border-amber-500/20', icon: ShoppingCart },
@@ -140,14 +142,15 @@ export default function PedidosSucursal() {
   const [inventarioSucursal, setInventarioSucursal] = useState(null);
 
   useEffect(() => {
-    if (!perfil?.sucursal_id) return;
+    const sucursalId = perfil?.sucursal_id;
+    if (!sucursalId) return;
     const cargar = async () => {
       try {
-        const hoy = new Date().toISOString().slice(0, 10);
+        const hoy = fechaBoliviaISO();
         const { data } = await supabase
           .from('inventario_sucursal')
           .select('*')
-          .eq('sucursal_id', perfil.sucursal_id)
+          .eq('sucursal_id', sucursalId)
           .eq('fecha', hoy)
           .maybeSingle();
         setInventarioSucursal(data);
@@ -156,6 +159,22 @@ export default function PedidosSucursal() {
       }
     };
     cargar();
+
+    const canal = supabase
+      .channel(`sucursal-inventario-resumen-${sucursalId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'inventario_sucursal',
+          filter: `sucursal_id=eq.${sucursalId}`,
+        },
+        cargar,
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(canal); };
   }, [perfil?.sucursal_id]);
   const [mostrarEmergencia, setMostrarEmergencia] = useState(false);
   const [enviandoEmergencia, setEnviandoEmergencia] = useState(false);
@@ -573,7 +592,7 @@ export default function PedidosSucursal() {
         p_observaciones: formEmergencia.observaciones.trim() || 'PEDIDO DE EMERGENCIA',
       });
       if (error) throw error;
-      setMensaje({ tipo: 'exito', texto: `Pedido de emergencia #${data} creado. El dueño y el admin fueron notificados.` });
+      setMensaje({ tipo: 'exito', texto: `Pedido de emergencia #${data} creado y marcado como urgente para el dueño y operaciones.` });
       setMostrarEmergencia(false);
       setFormEmergencia({ unidades: '', observaciones: '' });
       await cargar({ silencioso: true });
@@ -1498,6 +1517,8 @@ export default function PedidosSucursal() {
                 <h1 className={`text-base md:text-xl font-black tracking-tight truncate ${strong}`}>
                   {vista === 'historial'
                     ? 'Historial de pedidos'
+                    : vista === 'inventario'
+                      ? 'Inventario diario'
                     : esVistaAdmin
                       ? 'Seguimiento de pedidos'
                       : 'Mis Pedidos'}
@@ -1579,6 +1600,24 @@ export default function PedidosSucursal() {
             >
               <History size={15} /> Historial de pedidos
             </button>
+            {esSucursal && (
+              <button
+                type="button"
+                onClick={() => setVista('inventario')}
+                className={tabClase(vista === 'inventario')}
+              >
+                <Boxes size={15} /> Inventario diario
+              </button>
+            )}
+            {esSucursal && (
+              <button
+                type="button"
+                onClick={() => navigate('/inventarios-sucursales')}
+                className={tabClase(false)}
+              >
+                <Boxes size={15} /> Inventario general
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -1772,6 +1811,12 @@ export default function PedidosSucursal() {
               </div>
             )}
           </section>
+        ) : vista === 'inventario' && esSucursal ? (
+          <InventarioDiarioSucursal
+            sucursalId={perfil?.sucursal_id}
+            nombreSucursal={perfil?.sucursales?.nombre}
+            darkMode={darkMode}
+          />
         ) : (
           <>
         {cargando ? (
@@ -1919,15 +1964,11 @@ export default function PedidosSucursal() {
 
             {inventarioSucursal && (
               <div className={`mb-4 rounded-xl border p-3 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'}`}>
-                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted} mb-2`}>Mi inventario (hoy)</p>
+                <p className={`text-[10px] font-bold uppercase tracking-wider ${muted} mb-2`}>Pollo crudo disponible hoy</p>
                 <div className="flex gap-4">
                   <div className={`flex-1 rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                    <p className={`text-[9px] ${muted}`}>Crudos</p>
-                    <p className={`text-sm font-bold ${strong}`}>{inventarioSucursal.pollos_crudos}</p>
-                  </div>
-                  <div className={`flex-1 rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                    <p className={`text-[9px] ${muted}`}>Rostizados</p>
-                    <p className={`text-sm font-bold ${strong}`}>{inventarioSucursal.pollos_rostizados}</p>
+                    <p className={`text-[9px] ${muted}`}>Crudo</p>
+                    <p className={`text-sm font-bold ${strong}`}>{stockCrudoActualSucursal(inventarioSucursal)}</p>
                   </div>
                 </div>
               </div>
@@ -2060,7 +2101,7 @@ export default function PedidosSucursal() {
                   Pedido de emergencia
                 </h3>
                 <p className={`mt-1 text-xs ${muted}`}>
-                  Crea un pedido urgente para tu sucursal. El dueño y el admin serán notificados.
+                  Crea un pedido urgente para tu sucursal. Aparecerá marcado como emergencia para el dueño y operaciones.
                 </p>
               </div>
             </div>
