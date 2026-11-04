@@ -8,6 +8,7 @@ import { evidenciasRepository } from '../../repositories/evidenciasRepository';
 import { supabase } from '../../config/supabaseClient';
 import SeguimientoRepartidor from '../../components/SeguimientoRepartidor';
 import { exportarAExcel } from '../../utils/exportUtils';
+import { stockCrudoActualSucursal } from '../../utils/inventarioSucursal';
 import PanelNotificaciones from '../../components/PanelNotificaciones';
 import {
   ArrowLeft, LogOut, Sun, Moon, MapPin, Loader2, Crown,
@@ -25,6 +26,17 @@ const fechaHoyBolivia = () => {
   }).formatToParts(new Date());
   const parte = (tipo) => partes.find((item) => item.type === tipo)?.value;
   return `${parte('year')}-${parte('month')}-${parte('day')}`;
+};
+
+const mesBolivia = (fecha) => {
+  if (!fecha) return '';
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date(fecha));
+  const parte = (tipo) => partes.find((item) => item.type === tipo)?.value;
+  return `${parte('year')}-${parte('month')}`;
 };
 
 const ESTADOS_PROGRESO = ['PENDIENTE', 'APROBADO', 'EN_PREPARACION', 'LISTO', 'RECOGIDO', 'ENTREGADO'];
@@ -97,6 +109,12 @@ export default function MisSucursalesDueno() {
   // Se define aquí con placeholder; el valor real viene de metricas (calculado más abajo).
 
   const [sucursales, setSucursales] = useState([]);
+  const [metasSucursal, setMetasSucursal] = useState({});
+  const [metasBorrador, setMetasBorrador] = useState({});
+  const [metaGuardandoId, setMetaGuardandoId] = useState(null);
+  const [mesMeta, setMesMeta] = useState(() => fechaHoyBolivia().slice(0, 7));
+  const [inventariosSucursal, setInventariosSucursal] = useState({});
+  const [inventariosRosticeroSucursal, setInventariosRosticeroSucursal] = useState({});
   const [mostrarPedido, setMostrarPedido] = useState(false);
   const [enviandoPedido, setEnviandoPedido] = useState(false);
   const [formPedido, setFormPedido] = useState({
@@ -262,6 +280,68 @@ export default function MisSucursalesDueno() {
     }
   }, [setError]);
 
+  const cargarMetasSucursal = useCallback(async () => {
+    if (!sucursales.length) {
+      setMetasSucursal({});
+      return;
+    }
+    try {
+      const { data, error: err } = await supabase
+        .from('metas_sucursal')
+        .select('sucursal_id, meta_unidades')
+        .eq('mes', mesMeta)
+        .in('sucursal_id', sucursales.map((sucursal) => sucursal.id));
+      if (err) throw err;
+      const metas = Object.fromEntries((data || []).map((meta) => [meta.sucursal_id, Number(meta.meta_unidades) || 0]));
+      setMetasSucursal(metas);
+      setMetasBorrador(metas);
+    } catch (err) {
+      setError(err.message || 'No se pudieron cargar las metas mensuales');
+    }
+  }, [sucursales, mesMeta, setError]);
+
+  const cargarInventariosSucursal = useCallback(async () => {
+    if (!sucursales.length) {
+      setInventariosSucursal({});
+      setInventariosRosticeroSucursal({});
+      return;
+    }
+    try {
+      const sucursalesIds = sucursales.map((sucursal) => sucursal.id);
+      const [inventarios, reportesRosticero] = await Promise.all([
+        supabase
+          .from('inventario_sucursal')
+          .select('sucursal_id, fecha, pollos_crudos, pollos_crudos_iniciales, pollos_recibidos, pollos_recibidos_en_conteo, conteo_guardado_en, hora_corte, cerrado_en')
+          .eq('fecha', fechaHoyBolivia())
+          .in('sucursal_id', sucursalesIds),
+        Promise.all(sucursalesIds.map((sucursalId) => supabase
+          .from('reportes_rosticero')
+          .select('sucursal_id, fecha, saldo_final_dia, creado_en')
+          .eq('sucursal_id', sucursalId)
+          .eq('archivado', false)
+          .order('fecha', { ascending: false })
+          .order('creado_en', { ascending: false })
+          .limit(1)
+          .maybeSingle())),
+      ]);
+      if (inventarios.error) throw inventarios.error;
+      const errorReporte = reportesRosticero.find((resultado) => resultado.error);
+      if (errorReporte) throw errorReporte.error;
+      setInventariosSucursal(Object.fromEntries((inventarios.data || []).map((inventario) => [
+        inventario.sucursal_id,
+        inventario,
+      ])));
+      setInventariosRosticeroSucursal(Object.fromEntries(
+        reportesRosticero
+          .map(({ data }) => data)
+          .filter(Boolean)
+          .map((reporte) => [reporte.sucursal_id, reporte])
+      ));
+    } catch (err) {
+      setError(err.message || 'No se pudo cargar el inventario de las sucursales');
+    }
+  }, [sucursales, setError]);
+
   useEffect(() => {
     if (!duenoId) return undefined;
 
@@ -277,6 +357,49 @@ export default function MisSucursalesDueno() {
 
     return () => { supabase.removeChannel(canal); };
   }, [duenoId, cargarSucursales]);
+
+  useEffect(() => {
+    if (!sucursales.length) return;
+    cargarMetasSucursal();
+    cargarInventariosSucursal();
+
+    const canal = supabase
+      .channel('dueno-metas-sucursal-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'metas_sucursal' },
+        () => cargarMetasSucursal())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventario_sucursal' },
+        () => cargarInventariosSucursal())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reportes_rosticero' },
+        () => cargarInventariosSucursal())
+      .subscribe();
+
+    return () => { supabase.removeChannel(canal); };
+  }, [sucursales, mesMeta, cargarMetasSucursal, cargarInventariosSucursal]);
+
+  const guardarMetaSucursal = async (sucursalId) => {
+    const metaUnidades = Number(metasBorrador[sucursalId]);
+    if (!Number.isInteger(metaUnidades) || metaUnidades < 0) {
+      setError('La meta mensual debe ser un número entero igual o mayor que cero.');
+      return;
+    }
+    try {
+      setMetaGuardandoId(sucursalId);
+      const { error: err } = await supabase.rpc('guardar_meta_sucursal', {
+        p_sucursal_id: sucursalId,
+        p_mes: mesMeta,
+        p_meta_unidades: metaUnidades,
+        p_meta_kilos: null,
+      });
+      if (err) throw err;
+      setMetasSucursal((actuales) => ({ ...actuales, [sucursalId]: metaUnidades }));
+      setMetasBorrador((actuales) => ({ ...actuales, [sucursalId]: metaUnidades }));
+      setMensaje('Meta mensual guardada.');
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar la meta mensual');
+    } finally {
+      setMetaGuardandoId(null);
+    }
+  };
 
   const esDueño = perfil?.roles?.nombre === 'dueno';
   const sinVinculo = esDueño && duenoId === null;
@@ -438,7 +561,8 @@ export default function MisSucursalesDueno() {
       return (
         String(p.id).includes(t) ||
         (p.sucursales?.nombre || '').toLowerCase().includes(t) ||
-        (p.estado || '').toLowerCase().includes(t)
+        (p.estado || '').toLowerCase().includes(t) ||
+        (p.emergencia && ['emergencia', 'urgente'].some((termino) => termino.includes(t)))
       );
     });
 
@@ -504,6 +628,22 @@ export default function MisSucursalesDueno() {
     const estado = pct < 50 ? 'critico' : pct < 100 ? 'alerta' : 'ok';
     return { stock, disponibles, pct, estado, faltan: Math.max(totalMinimo - stock, 0) };
   }, [disponibilidad, totalMinimo]);
+
+  const unidadesRecibidasMes = useMemo(() => {
+    const porSucursal = new Map();
+    for (const pedido of pedidos) {
+      if (pedido.estado !== 'ENTREGADO') continue;
+      for (const recepcion of pedido.pedido_recepciones || []) {
+        if (mesBolivia(recepcion.recibido_en) !== mesMeta) continue;
+        const sucursalId = Number(pedido.sucursal_id);
+        porSucursal.set(
+          sucursalId,
+          (porSucursal.get(sucursalId) || 0) + (Number(recepcion.unidades_recibidas) || 0),
+        );
+      }
+    }
+    return porSucursal;
+  }, [pedidos, mesMeta]);
 
   // Título de pestaña con pendientes
   useEffect(() => {
@@ -1331,13 +1471,22 @@ export default function MisSucursalesDueno() {
         {/* ── Metas del mes ── */}
         {vistaPanel === 'resumen' && sucursales.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
-            <p className={`text-sm font-bold mb-4 ${strong}`}>Metas del mes actual</p>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <p className={`text-sm font-bold ${strong}`}>Metas mensuales de pollo</p>
+              <label className={`flex items-center gap-2 text-xs font-semibold ${muted}`}>
+                Mes
+                <input
+                  type="month"
+                  value={mesMeta}
+                  onChange={(e) => setMesMeta(e.target.value)}
+                  className={`rounded-lg border px-2.5 py-2 text-xs ${input}`}
+                />
+              </label>
+            </div>
             <div className="space-y-3">
               {sucursales.map((s) => {
-                const meta = 0; // Se cargará desde metas_sucursal cuando el SQL esté ejecutado
-                const actual = visibles
-                  .filter((p) => String(p.sucursal_id) === String(s.id))
-                  .reduce((a, p) => a + (parseInt(p.unidades) || 0), 0);
+                const meta = Number(metasSucursal[s.id]) || 0;
+                const actual = unidadesRecibidasMes.get(Number(s.id)) || 0;
                 const pct = meta > 0 ? Math.min(Math.round((actual / meta) * 100), 100) : 0;
                 return (
                   <div key={s.id} className={`p-3 rounded-xl ${darkMode ? 'bg-slate-800/50' : 'bg-gray-50'}`}>
@@ -1355,11 +1504,33 @@ export default function MisSucursalesDueno() {
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    {meta === 0 && (
-                      <p className={`mt-1 text-[10px] ${muted}`}>
-                        Define una meta en la gestión de sucursales para ver el progreso.
-                      </p>
-                    )}
+                    <div className="mt-2 flex flex-wrap items-end gap-2">
+                      <label className={`flex flex-col gap-1 text-[10px] font-semibold ${muted}`}>
+                        Meta mensual de pollo (unidades)
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={metasBorrador[s.id] ?? ''}
+                          onChange={(e) => setMetasBorrador((actuales) => ({
+                            ...actuales,
+                            [s.id]: e.target.value,
+                          }))}
+                          className={`w-40 rounded-lg border px-2.5 py-2 text-xs ${input}`}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => guardarMetaSucursal(s.id)}
+                        disabled={metaGuardandoId === s.id}
+                        className="rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-white transition hover:bg-amber-600 disabled:opacity-60"
+                      >
+                        {metaGuardandoId === s.id ? 'Guardando...' : 'Guardar meta'}
+                      </button>
+                      <span className={`text-[10px] ${muted}`}>
+                        El avance cuenta las unidades efectivamente recibidas este mes.
+                      </span>
+                    </div>
                   </div>
                 );
               })}
@@ -1435,38 +1606,84 @@ export default function MisSucursalesDueno() {
         {vistaPanel === 'inventario' && sucursales.length > 0 && (
           <div className={`mb-6 rounded-2xl border p-4 ${card}`}>
             <div className="flex items-center justify-between mb-4">
-              <p className={`text-sm font-bold ${strong}`}>Inventario de mis sucursales</p>
-              <Boxes size={18} className="text-amber-500" />
+              <p className={`text-sm font-bold ${strong}`}>Inventario general de mis sucursales</p>
+              <button
+                type="button"
+                onClick={() => navigate('/inventarios-sucursales')}
+                className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 px-3 py-2 text-xs font-bold text-amber-500 transition hover:bg-amber-500/10"
+              >
+                <Boxes size={16} /> Ver inventarios diarios
+              </button>
+            </div>
+            <div className={`mb-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 ${normal}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>Pollo crudo disponible en sucursales</p>
+              <p className="mt-1 text-2xl font-black text-amber-500">
+                {Object.values(inventariosSucursal).reduce(
+                  (total, inventario) => total + (stockCrudoActualSucursal(inventario) || 0),
+                  0
+                )} u
+              </p>
+              <p className={`mt-1 text-xs ${muted}`}>
+                Suma de los conteos de hoy. El saldo rostizado se muestra aparte, según el último reporte de cada rosticero.
+              </p>
+            </div>
+            <div className={`mb-4 rounded-xl border border-orange-500/20 bg-orange-500/5 p-4 ${normal}`}>
+              <p className={`text-xs font-semibold uppercase tracking-wide ${muted}`}>Pollo rostizado · último saldo reportado</p>
+              <p className="mt-1 text-2xl font-black text-orange-500">
+                {Object.values(inventariosRosticeroSucursal).reduce(
+                  (total, reporte) => total + (Number(reporte.saldo_final_dia) || 0),
+                  0
+                )} u
+              </p>
+              <p className={`mt-1 text-xs ${muted}`}>Este saldo proviene del reporte del rosticero y no se mezcla con el pollo crudo.</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className={tableHead}>
                   <tr>
                     <th className={`px-4 py-2 text-left ${muted}`}>Sucursal</th>
-                    <th className={`px-4 py-2 text-right ${muted}`}>Mínimo</th>
-                    <th className={`px-4 py-2 text-right ${muted}`}>Stock Actual</th>
+                    <th className={`px-4 py-2 text-right ${muted}`}>Mínimo crudo</th>
+                    <th className={`px-4 py-2 text-right ${muted}`}>Pollo crudo</th>
+                    <th className={`px-4 py-2 text-right ${muted}`}>Pollo rostizado</th>
+                    <th className={`px-4 py-2 text-right ${muted}`}>Fecha reporte</th>
                     <th className={`px-4 py-2 text-center ${muted}`}>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sucursales.map((s) => {
                     const minimo = parseInt(s.stock_minimo, 10) || 0;
-                    // El stock actual es compartido por planta, pero mostramos el mínimo de la sucursal
-                    const stockPlanta = semaforoStock?.stock || 0;
-                    const pct = minimo > 0 ? Math.round((stockPlanta / minimo) * 100) : 100;
-                    const estado = pct < 50 ? 'critico' : pct < 100 ? 'alerta' : 'ok';
+                    const inventario = inventariosSucursal[s.id];
+                    const reporteRosticero = inventariosRosticeroSucursal[s.id];
+                    const stockSucursal = stockCrudoActualSucursal(inventario);
+                    const pct = minimo > 0 && stockSucursal !== null
+                      ? Math.round((stockSucursal / minimo) * 100)
+                      : 100;
+                    const estado = stockSucursal === null
+                      ? 'sin_datos'
+                      : pct < 50 ? 'critico' : pct < 100 ? 'alerta' : 'ok';
                     return (
                       <tr key={s.id} className={`border-t border-inherit ${rowHover}`}>
                         <td className={`px-4 py-2 ${normal}`}>{s.nombre}</td>
                         <td className={`px-4 py-2 text-right ${normal}`}>{minimo} u</td>
-                        <td className={`px-4 py-2 text-right ${normal}`}>{stockPlanta} u (planta)</td>
+                        <td className={`px-4 py-2 text-right ${normal}`}>
+                          {stockSucursal === null
+                            ? 'Sin inventario de hoy'
+                            : `${stockSucursal} u${inventario.cerrado_en ? ' · cerrado' : inventario.hora_corte ? ' · en curso' : ' · sin iniciar'}`}
+                        </td>
+                        <td className={`px-4 py-2 text-right ${normal}`}>
+                          {reporteRosticero ? `${Number(reporteRosticero.saldo_final_dia) || 0} u` : 'Sin reporte'}
+                        </td>
+                        <td className={`px-4 py-2 text-right ${muted}`}>
+                          {reporteRosticero ? new Date(`${reporteRosticero.fecha}T12:00:00`).toLocaleDateString('es-BO') : '—'}
+                        </td>
                         <td className="px-4 py-2 text-center">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                             estado === 'critico' ? 'bg-red-500/10 text-red-500'
                             : estado === 'alerta' ? 'bg-amber-500/10 text-amber-500'
+                            : estado === 'sin_datos' ? 'bg-slate-500/10 text-slate-500'
                             : 'bg-emerald-500/10 text-emerald-500'
                           }`}>
-                            {estado === 'critico' ? 'Crítico' : estado === 'alerta' ? 'Alerta' : 'OK'}
+                            {estado === 'critico' ? 'Crítico' : estado === 'alerta' ? 'Alerta' : estado === 'sin_datos' ? 'Sin datos' : 'OK'}
                           </span>
                         </td>
                       </tr>
@@ -1476,7 +1693,7 @@ export default function MisSucursalesDueno() {
               </table>
             </div>
             <p className={`mt-3 text-xs ${muted}`}>
-              El stock de planta se comparte entre todas tus sucursales. El mínimo es el que definiste en la gestión.
+              El stock mostrado corresponde al último conteo diario de cada sucursal. El mínimo es el que definiste en la gestión.
             </p>
           </div>
         )}
@@ -2015,7 +2232,14 @@ export default function MisSucursalesDueno() {
                   return (
                     <Fragment key={p.id}>
                       <tr className={`border-t border-inherit ${rowHover} ${atrasado ? (darkMode ? 'bg-red-950/10' : 'bg-red-50/50') : ''}`}>
-                        <td className={`px-4 py-3 font-bold ${normal}`}>{p.id}</td>
+                        <td className={`px-4 py-3 font-bold ${normal}`}>
+                          <div>{p.id}</div>
+                          {p.emergencia && (
+                            <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-500">
+                              <AlertTriangle size={11} /> Emergencia
+                            </span>
+                          )}
+                        </td>
                         <td className={`px-4 py-3 ${normal}`}>{p.sucursales?.nombre || '—'}</td>
                         <td className={`px-4 py-3 ${atrasado ? 'text-red-500 font-semibold' : muted}`}>
                           <span className="inline-flex items-center gap-1">

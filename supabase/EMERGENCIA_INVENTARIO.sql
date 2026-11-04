@@ -81,18 +81,52 @@ SECURITY DEFINER
 AS $$
 DECLARE
   v_pedido_id BIGINT;
-  v_dueno_id BIGINT;
+  v_sucursal_usuario BIGINT;
 BEGIN
-  -- Obtener dueno_id de la sucursal
-  SELECT dueno_id INTO v_dueno_id FROM public.sucursales WHERE id = p_sucursal_id;
+  IF public.get_user_rol() IS DISTINCT FROM 'sucursal' THEN
+    RAISE EXCEPTION 'Solo una sucursal puede crear un pedido de emergencia.'
+      USING ERRCODE = '42501';
+  END IF;
+  IF p_unidades IS NULL OR p_unidades <= 0 THEN
+    RAISE EXCEPTION 'Las unidades deben ser un número entero mayor que cero.';
+  END IF;
+
+  SELECT pu.sucursal_id INTO v_sucursal_usuario
+    FROM public.perfiles_usuario pu
+   WHERE pu.usuario_id = auth.uid();
+  IF v_sucursal_usuario IS NULL OR v_sucursal_usuario IS DISTINCT FROM p_sucursal_id THEN
+    RAISE EXCEPTION 'Solo puedes crear una emergencia para tu sucursal.'
+      USING ERRCODE = '42501';
+  END IF;
 
   INSERT INTO public.pedidos (sucursal_id, unidades, fecha, observaciones, estado, emergencia)
-  VALUES (p_sucursal_id, p_unidades, CURRENT_DATE, COALESCE(p_observaciones, 'PEDIDO DE EMERGENCIA'), 'PENDIENTE', TRUE)
+  VALUES (
+    p_sucursal_id,
+    p_unidades,
+    (now() AT TIME ZONE 'America/La_Paz')::DATE,
+    COALESCE(NULLIF(btrim(p_observaciones), ''), 'PEDIDO DE EMERGENCIA'),
+    'PENDIENTE',
+    TRUE
+  )
   RETURNING id INTO v_pedido_id;
 
   RETURN v_pedido_id;
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.crear_pedido_emergencia(BIGINT, INTEGER, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.crear_pedido_emergencia(BIGINT, INTEGER, TEXT) TO authenticated;
+
 -- 6. Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE public.inventario_sucursal;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+     WHERE pubname = 'supabase_realtime'
+       AND schemaname = 'public'
+       AND tablename = 'inventario_sucursal'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.inventario_sucursal;
+  END IF;
+END;
+$$;

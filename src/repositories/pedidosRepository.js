@@ -42,6 +42,25 @@ const CAMPOS_PEDIDO_COMPLETO = `
   ${CAMPOS_PEDIDO_BASE},
   kilos_despachados,
   motivo_rechazo,
+  emergencia,
+  archivado,
+  archivado_en,
+  pedido_recepciones (
+    unidades_recibidas,
+    faltantes,
+    observaciones,
+    recibido_por_nombre,
+    recibido_en,
+    foto_url,
+    firma_url,
+    fotos_extra
+  )
+`;
+
+const CAMPOS_PEDIDO_SIN_EMERGENCIA = `
+  ${CAMPOS_PEDIDO_BASE},
+  kilos_despachados,
+  motivo_rechazo,
   archivado,
   archivado_en,
   pedido_recepciones (
@@ -57,6 +76,32 @@ const CAMPOS_PEDIDO_COMPLETO = `
 `;
 
 export const pedidosRepository = {
+  async listarParaAdministrador({ estado } = {}) {
+    let query = supabase
+      .from('pedidos')
+      .select('id, sucursal_id, fecha, unidades, estado, observaciones, creado_en, sucursales(nombre, sector)')
+      .order('creado_en', { ascending: false });
+    if (estado && estado !== 'TODOS') query = query.eq('estado', estado);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async aprobar(pedidoId) {
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({ estado: 'APROBADO' })
+      .eq('id', pedidoId)
+      .eq('estado', 'PENDIENTE')
+      .select('id, estado')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      throw new Error('El pedido ya no está pendiente o no tienes permiso para aprobarlo. Actualiza la lista.');
+    }
+    return data;
+  },
+
   async guardarUbicacionRepartidor({ pedidoId, despachadorId, latitude, longitude, precisionM }) {
     const { error } = await supabase
       .from('seguimiento_pedidos')
@@ -78,8 +123,15 @@ export const pedidosRepository = {
 
     // Si la base todavia no tiene las columnas nuevas se reintenta
     // sin ellas, para que la pantalla no quede en blanco mientras se
-    // corre el SQL de archivado o de reportes.
+    // corren los SQL de emergencia, archivado o reportes.
     let { data, error } = await consultar(CAMPOS_PEDIDO_COMPLETO);
+    if (error && esColumnaFaltante(error.message)) {
+      const sinEmergencia = await consultar(CAMPOS_PEDIDO_SIN_EMERGENCIA);
+      if (!sinEmergencia.error) {
+        data = sinEmergencia.data;
+        error = null;
+      }
+    }
     if (error && esColumnaFaltante(error.message)) {
       const sinArchivo = await consultar(CAMPOS_PEDIDO_SIN_ARCHIVO);
       if (!sinArchivo.error) {

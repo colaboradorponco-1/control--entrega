@@ -7,7 +7,7 @@ import { authRepository } from '../../repositories/AuthRepository';
 import { pedidosRepository } from '../../repositories/pedidosRepository';
 import { supabase } from '../../config/supabaseClient';
 import { exportarAExcel, exportarAPDF } from '../../utils/exportUtils';
-import { ArrowLeft, LogOut, ShieldCheck, TrendingUp, Package, Truck, DollarSign, RefreshCw, FileSpreadsheet, FileText, Filter, Sun, Moon, Users, MapPin, MapPinned, Crown, Route, ShoppingCart, AlertCircle, Search, X, Clock, Table } from 'lucide-react';
+import { ArrowLeft, LogOut, ShieldCheck, TrendingUp, Package, Truck, DollarSign, RefreshCw, FileSpreadsheet, FileText, Filter, Sun, Moon, Users, MapPin, MapPinned, Crown, Route, ShoppingCart, AlertCircle, Search, X, Clock, Table, Boxes } from 'lucide-react';
 import MapaGeneral from '../../components/MapaGeneral';
 import MapaFlota from '../../components/MapaFlota';
 import SeguimientoRepartidor from '../../components/SeguimientoRepartidor';
@@ -375,11 +375,19 @@ export default function DashboardAdmin() {
             <MapPin size={16} /> <span className="hidden lg:inline">Sucursales</span>
           </button>
           <button
-            onClick={() => navigate('/sucursal')}
-            className="flex items-center gap-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-600 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+            onClick={() => navigate('/inventarios-sucursales')}
+            className="flex items-center gap-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-600 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
           >
-            <ShoppingCart size={16} /> <span className="hidden lg:inline">Pedidos</span>
+            <Boxes size={16} /> <span className="hidden lg:inline">Inventario diario</span>
           </button>
+          {perfil?.roles?.nombre === 'administrador' && (
+            <button
+              onClick={() => navigate('/admin/pedidos')}
+              className="flex items-center gap-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-600 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+            >
+              <ShoppingCart size={16} /> <span className="hidden lg:inline">Aprobar pedidos</span>
+            </button>
+          )}
           <button
             onClick={() => navigate('/duenos')}
             className="flex items-center gap-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-500 px-3 md:px-4 py-2.5 rounded-xl text-sm font-semibold transition"

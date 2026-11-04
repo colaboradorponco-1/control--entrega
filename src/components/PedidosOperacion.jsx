@@ -426,6 +426,11 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                               </span>
                             )}
                             <span className={`text-[11px] ${muted}`}>#{p.id}</span>
+                            {p.emergencia && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-500">
+                                <AlertCircle size={11} /> Emergencia
+                              </span>
+                            )}
                           </div>
 
                           <p className={`mt-1.5 text-sm ${normal}`}>

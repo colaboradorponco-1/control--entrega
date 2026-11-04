@@ -5,6 +5,8 @@ import ProtectedRoute from '../components/ProtectedRoute';
 const Login = lazy(() => import('../modules/auth/Login'));
 const RecepcionPollo = lazy(() => import('../modules/planta/RecepcionPollo'));
 const DashboardAdmin = lazy(() => import('../modules/admin/DashboardAdmin'));
+const PedidosAdmin = lazy(() => import('../modules/admin/PedidosAdmin'));
+const InventarioGeneral = lazy(() => import('../modules/inventario/InventarioGeneral'));
 const GestionUsuarios = lazy(() => import('../modules/admin/GestionUsuarios'));
 const GestionSucursales = lazy(() => import('../modules/admin/GestionSucursales'));
 const PedidosSucursal = lazy(() => import('../modules/sucursal/PedidosSucursal'));
@@ -102,6 +104,22 @@ export default function AppRouter() {
           element={
             <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador']}>
               <DashboardAdmin />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/pedidos"
+          element={
+            <ProtectedRoute rolesPermitidos={['administrador']}>
+              <PedidosAdmin />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/inventarios-sucursales"
+          element={
+            <ProtectedRoute rolesPermitidos={['administrador', 'superadministrador', 'dueno', 'sucursal']}>
+              <InventarioGeneral />
             </ProtectedRoute>
           }
         />

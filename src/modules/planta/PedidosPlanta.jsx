@@ -46,7 +46,7 @@ export default function PedidosPlanta() {
   const { perfil } = useAuth();
   // Solo la planta mueve estos estados. El admin entra a mirar: si
   // viera los botones, la base se los rechazaria igual.
-  const esOperadorPlanta = ['operador_planta', 'administrador'].includes(perfil?.roles?.nombre || '');
+  const esOperadorPlanta = perfil?.roles?.nombre === 'operador_planta';
 
   return (
     <PedidosOperacion

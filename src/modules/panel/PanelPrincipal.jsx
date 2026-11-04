@@ -6,7 +6,7 @@ import { authRepository } from '../../repositories/AuthRepository';
 import AvatarUsuario from '../../components/AvatarUsuario';
 import EditarPerfil from '../perfil/EditarPerfil';
 import {
-  ArrowRight, Bell, Crown, FileSpreadsheet, FileText, LogOut, MapPin, Moon, PackageCheck, Route,
+  ArrowRight, Bell, Boxes, Crown, FileSpreadsheet, FileText, LogOut, MapPin, Moon, PackageCheck, Route,
   ShieldCheck, ShoppingCart, Sun, Truck, UserCog, Users, Warehouse, ClipboardList,
 } from 'lucide-react';
 
@@ -16,6 +16,7 @@ const PANELES_POR_ROL = {
     responsabilidad: 'Gestiona sucursales, dueños y usuarios, consulta pedidos y reportes, administra las planillas semanales y supervisa la actividad del sistema.',
     accesos: [
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
+      { titulo: 'Inventarios diarios', detalle: 'Consulta y archiva registros diarios de las sucursales.', ruta: '/inventarios-sucursales', icono: Boxes },
       { titulo: 'Planilla de ventas', detalle: 'Ventas por sucursal, inventario y costos de la semana.', ruta: '/planilla', icono: FileSpreadsheet },
       { titulo: 'Administrar usuarios', detalle: 'Gestiona todos los usuarios excepto la cuenta única de superadministrador.', ruta: '/usuarios', icono: Users },
       { titulo: 'Ver pedidos', detalle: 'Consulta pedidos y su avance sin aprobarlos ni modificarlos.', ruta: '/sucursal', icono: ShoppingCart },
@@ -33,6 +34,7 @@ const PANELES_POR_ROL = {
     responsabilidad: 'Administra la operación general, aprueba pedidos y gestiona sucursales, dueños y usuarios operativos.',
     accesos: [
       { titulo: 'Resumen administrativo', detalle: 'Indicadores, inventario y seguimiento general.', ruta: '/admin', icono: ShieldCheck },
+      { titulo: 'Inventarios diarios', detalle: 'Consulta y archiva registros diarios de las sucursales.', ruta: '/inventarios-sucursales', icono: Boxes },
       { titulo: 'Bandeja de avisos', detalle: 'Reportes de entrega y faltantes de las sucursales.', ruta: '/avisos', icono: Bell },
       { titulo: 'Pedidos', detalle: 'Consulta y aprueba solicitudes de las sucursales.', ruta: '/sucursal', icono: ShoppingCart },
       { titulo: 'Usuarios', detalle: 'Gestiona usuarios operativos y de sucursal.', ruta: '/usuarios', icono: Users },
@@ -70,6 +72,7 @@ const PANELES_POR_ROL = {
     responsabilidad: 'Consulta sus sucursales, crea pedidos para ellas y revisa el avance; no modifica el trabajo de planta ni despacho.',
     accesos: [
       { titulo: 'Mis sucursales y pedidos', detalle: 'Consulta sucursales, solicita pedidos y sigue su avance.', ruta: '/mis-sucursales', icono: Crown },
+      { titulo: 'Inventarios diarios', detalle: 'Consulta y archiva registros diarios de tus sucursales.', ruta: '/inventarios-sucursales', icono: Boxes },
     ],
   },
   rosticero: {
