@@ -109,6 +109,7 @@ export default function MisSucursalesDueno() {
   // Se define aquí con placeholder; el valor real viene de metricas (calculado más abajo).
 
   const [sucursales, setSucursales] = useState([]);
+  const [ventasSucursales, setVentasSucursales] = useState([]);
   const [metasSucursal, setMetasSucursal] = useState({});
   const [metasBorrador, setMetasBorrador] = useState({});
   const [metaGuardandoId, setMetaGuardandoId] = useState(null);
@@ -275,6 +276,22 @@ export default function MisSucursalesDueno() {
     try {
       const asignadas = await pedidosRepository.listarSucursalesParaPedidoDueno();
       setSucursales(asignadas);
+      if (asignadas.length) {
+        const hoy = fechaHoyBolivia();
+        const inicio = new Date(`${hoy}T12:00:00`);
+        inicio.setDate(inicio.getDate() - 6);
+        const { data, error: errorVentas } = await supabase
+          .from('planilla_ventas')
+          .select('fecha, sucursal_id, unidades, transacciones, importe_bs')
+          .gte('fecha', inicio.toISOString().slice(0, 10))
+          .lte('fecha', hoy)
+          .in('sucursal_id', asignadas.map((sucursal) => sucursal.id))
+          .order('fecha', { ascending: false });
+        if (errorVentas) throw errorVentas;
+        setVentasSucursales(data || []);
+      } else {
+        setVentasSucursales([]);
+      }
     } catch (err) {
       setError(err.message || 'No se pudieron cargar tus sucursales');
     }
@@ -1153,6 +1170,7 @@ export default function MisSucursalesDueno() {
           {[
             { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, badge: metricas.pendientes },
             { id: 'resumen', label: 'Resumen', icon: TrendingUp },
+            { id: 'ventas', label: 'Ventas', icon: TrendingUp },
             { id: 'inventario', label: 'Inventario', icon: Boxes },
             {
               id: 'revisiones',
@@ -1184,6 +1202,48 @@ export default function MisSucursalesDueno() {
             </button>
           ))}
         </nav>
+
+        {vistaPanel === 'ventas' && (
+          <section className={`mb-6 rounded-2xl border p-4 ${card}`}>
+            <div className="mb-4">
+              <h2 className={`text-sm font-black ${strong}`}>Ventas de los últimos 7 días</h2>
+              <p className={`mt-1 text-xs ${muted}`}>Resumen de las sucursales asignadas.</p>
+            </div>
+            {ventasSucursales.length ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className={tableHead}>
+                    <tr>
+                      <th className="px-3 py-2 text-left">Fecha</th>
+                      <th className="px-3 py-2 text-left">Sucursal</th>
+                      <th className="px-3 py-2 text-right">Vendidas</th>
+                      <th className="px-3 py-2 text-right">Transacciones</th>
+                      <th className="px-3 py-2 text-right">Importe Bs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ventasSucursales.map((venta) => {
+                      const sucursal = sucursales.find((item) => String(item.id) === String(venta.sucursal_id));
+                      return (
+                        <tr key={`${venta.fecha}-${venta.sucursal_id}`} className={`border-t ${darkMode ? 'border-slate-800' : 'border-gray-200'}`}>
+                          <td className="px-3 py-2">{venta.fecha}</td>
+                          <td className="px-3 py-2 font-bold">{sucursal?.nombre || `Sucursal ${venta.sucursal_id}`}</td>
+                          <td className="px-3 py-2 text-right font-bold">{Number(venta.unidades).toLocaleString('es-BO')}</td>
+                          <td className="px-3 py-2 text-right">{Number(venta.transacciones).toLocaleString('es-BO')}</td>
+                          <td className="px-3 py-2 text-right font-bold">{Number(venta.importe_bs).toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className={`rounded-xl border px-4 py-6 text-center text-sm ${darkMode ? 'border-slate-800 text-slate-400' : 'border-gray-200 text-gray-500'}`}>
+                No hay ventas registradas en los últimos 7 días.
+              </p>
+            )}
+          </section>
+        )}
 
         {/* ── Dashboard de Prioridades ── */}
         {vistaPanel === 'pedidos' && (

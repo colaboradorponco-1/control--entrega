@@ -58,7 +58,7 @@ export default function AppRouter() {
         <Route
           path="/planta"
           element={
-            <ProtectedRoute rolesPermitidos={['operador_planta', 'administrador']}>
+            <ProtectedRoute rolesPermitidos={['operador_planta']} excluirSuperadmin>
               <RecepcionPollo />
             </ProtectedRoute>
           }
@@ -200,7 +200,7 @@ export default function AppRouter() {
         <Route
           path="/planta/pedidos"
           element={
-            <ProtectedRoute rolesPermitidos={['operador_planta', 'administrador']}>
+            <ProtectedRoute rolesPermitidos={['operador_planta']} excluirSuperadmin>
               <PedidosPlanta />
             </ProtectedRoute>
           }

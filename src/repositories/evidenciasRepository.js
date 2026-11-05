@@ -61,11 +61,10 @@ export const evidenciasRepository = {
   /** los archivos son privados: la base devuelve un enlace que expira */
   async url(ruta) {
     if (!ruta) return null;
-    const { data, error } = await supabase.rpc('url_evidencia', {
-      p_ruta: ruta,
-      p_segundos: 900,
-    });
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(ruta, 900);
     if (error) throw error;
-    return data;
+    return data.signedUrl;
   },
 };

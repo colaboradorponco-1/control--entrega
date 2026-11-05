@@ -700,11 +700,13 @@ export default function PedidosProduccion({ titulo, subtitulo, color, acciones }
                 theme={{ borde: input, texto: label, tenue: muted, hoja: card }}
               />
 
-              <MapaUbicacion
-                valor={ubicacion}
-                onCambio={setUbicacion}
-                theme={{ borde: input, texto: label, tenue: muted, hoja: card, pin: '#06b6d4', oscuro: darkMode }}
-              />
+              {perfil?.roles?.nombre !== 'despachador' && (
+                <MapaUbicacion
+                  valor={ubicacion}
+                  onCambio={setUbicacion}
+                  theme={{ borde: input, texto: label, tenue: muted, hoja: card, pin: '#06b6d4', oscuro: darkMode }}
+                />
+              )}
 
               <div className="flex gap-3 pt-1">
                 <button

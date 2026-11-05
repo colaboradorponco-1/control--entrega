@@ -1,28 +1,4 @@
--- ============================================================
---  ARREGLAR: ver las fotos de evidencia
--- ------------------------------------------------------------
---  La base tiene 'verificar_archivo' y 'validar_fotos_extra'
---  (ARREGLAR_HELPERS_EVIDENCIA.sql), pero NO tiene la funcion que
---  devuelve el enlace de una foto. Sin ella el boton "Ver foto"
---  responde "Could not find the function public.url_evidencia".
---
---  Esta funcion devuelve un enlace con caducidad de una foto o
---  firma del bucket privado 'evidencias'.
---
---  Quién puede ver qué:
---    - sucursal: solo la evidencia de los pedidos de su sucursal
---    - administrador, planta, despacho: toda la evidencia
---    - superadmin: toda la evidencia MENOS la de los reportes de
---      entrega ('/observaciones/'), que son del administrador
---    - dueno y demás: nada
---
---  Requiere:
---    - bucket privado 'evidencias'  (BUCKET_EVIDENCIAS.sql)
---
---  Es seguro correrlo varias veces.
--- ============================================================
 
--- 1) El bucket tiene que existir (por si nunca se creo)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('evidencias', 'evidencias', FALSE, 5242880,
         ARRAY['image/jpeg', 'image/png', 'image/webp'])

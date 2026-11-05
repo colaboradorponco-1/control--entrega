@@ -5,6 +5,40 @@
 ALTER TABLE public.reportes_rosticero
   ADD COLUMN IF NOT EXISTS firma_url TEXT;
 
+-- El bucket tambien guarda las firmas dibujadas del rosticero.
+-- Conserva los MIME ya configurados y agrega PNG; si el bucket no existe, lo crea.
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'revisiones-videos',
+  'revisiones-videos',
+  TRUE,
+  52428800,
+  ARRAY['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'image/png']
+)
+ON CONFLICT (id) DO UPDATE
+SET public = TRUE,
+    allowed_mime_types = CASE
+      WHEN storage.buckets.allowed_mime_types IS NULL THEN NULL
+      WHEN 'image/png' = ANY(storage.buckets.allowed_mime_types)
+        THEN storage.buckets.allowed_mime_types
+      ELSE array_append(storage.buckets.allowed_mime_types, 'image/png')
+    END;
+
+DROP POLICY IF EXISTS "Rosticero sube firmas" ON storage.objects;
+CREATE POLICY "Rosticero sube firmas"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'revisiones-videos'
+    AND name LIKE 'rosticero-firmas/%'
+    AND EXISTS (
+      SELECT 1
+        FROM public.perfiles_usuario pu
+        JOIN public.roles r ON r.id = pu.rol_id
+       WHERE pu.usuario_id = auth.uid()
+         AND r.nombre = 'rosticero'
+    )
+  );
+
 -- 2. Actualizar RPC para incluir firma
 CREATE OR REPLACE FUNCTION public.crear_reporte_rosticero(
   p_sucursal_id BIGINT,

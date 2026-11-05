@@ -207,17 +207,6 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  IF EXISTS (
-    SELECT 1
-      FROM public.inventario_sucursal i
-     WHERE i.sucursal_id = v_sucursal_id
-       AND i.fecha < v_fecha
-        AND i.hora_corte IS NOT NULL
-        AND i.cerrado_en IS NULL
-  ) THEN
-    RAISE EXCEPTION 'Cierra el inventario anterior antes de iniciar uno nuevo.';
-  END IF;
-
   PERFORM pg_advisory_xact_lock(hashtextextended('inventario-sucursal-' || v_sucursal_id, 0));
 
   SELECT CASE

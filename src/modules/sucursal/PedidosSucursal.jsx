@@ -11,7 +11,7 @@ import {
   ShoppingCart, PackageCheck, Truck, Loader2, CalendarDays, Ban, Boxes, Store,
   Camera, FileCheck2, Images, RefreshCw, Inbox,
   History, XCircle, ChevronDown, Archive, ArchiveRestore, Trash2,
-  Search, Download
+  Search, Download, TrendingUp
 } from 'lucide-react';
 import FotosObservaciones from '../../components/FotosObservaciones';
 import FormularioRecepcion from '../../components/FormularioRecepcion';
@@ -21,6 +21,7 @@ import ModalConfirmar from '../../components/ModalConfirmar';
 import Skeleton from '../../components/Skeleton';
 import { stockCrudoActualSucursal } from '../../utils/inventarioSucursal';
 import InventarioDiarioSucursal from './InventarioDiarioSucursal';
+import VentasDiariasSucursal from './VentasDiariasSucursal';
 
 const ESTADOS = {
   PENDIENTE: { label: 'Pendiente', badge: 'bg-amber-500/10 text-amber-500 border-amber-500/20', icon: ShoppingCart },
@@ -1519,7 +1520,7 @@ export default function PedidosSucursal() {
                   {vista === 'historial'
                     ? 'Historial de pedidos'
                     : vista === 'entregas'
-                      ? 'Entregas directas'
+                      ? 'Entregas sin pedido'
                     : vista === 'inventario'
                       ? 'Inventario diario'
                     : esVistaAdmin
@@ -1609,7 +1610,7 @@ export default function PedidosSucursal() {
                 onClick={() => setVista('entregas')}
                 className={tabClase(vista === 'entregas')}
               >
-                <Store size={15} /> Entregas directas
+                <Store size={15} /> Entregas sin pedido
               </button>
             )}
             {esSucursal && (
@@ -1619,6 +1620,15 @@ export default function PedidosSucursal() {
                 className={tabClase(vista === 'inventario')}
               >
                 <Boxes size={15} /> Inventario diario
+              </button>
+            )}
+            {esSucursal && (
+              <button
+                type="button"
+                onClick={() => setVista('ventas')}
+                className={tabClase(vista === 'ventas')}
+              >
+                <TrendingUp size={15} /> Ventas diarias
               </button>
             )}
             {esSucursal && (
@@ -1827,6 +1837,12 @@ export default function PedidosSucursal() {
           <EntregasDirectas />
         ) : vista === 'inventario' && esSucursal ? (
           <InventarioDiarioSucursal
+            sucursalId={perfil?.sucursal_id}
+            nombreSucursal={perfil?.sucursales?.nombre}
+            darkMode={darkMode}
+          />
+        ) : vista === 'ventas' && esSucursal ? (
+          <VentasDiariasSucursal
             sucursalId={perfil?.sucursal_id}
             nombreSucursal={perfil?.sucursales?.nombre}
             darkMode={darkMode}

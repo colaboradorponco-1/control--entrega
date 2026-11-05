@@ -13,6 +13,25 @@ Comprobaciones disponibles:
 - `npm run lint`
 - `npm run build`
 
+## Docker
+
+1. Copia `.env.example` como `.env` y configura las variables de Supabase.
+2. Construye y ejecuta el contenedor:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Abre la aplicación en `http://localhost:8080`.
+
+Para cambiar el puerto publicado:
+
+```bash
+APP_PORT=5173 docker compose up -d --build
+```
+
+Las variables `VITE_*` se incorporan durante la compilación de Vite. Después de modificarlas, reconstruye la imagen con `docker compose up -d --build`.
+
 ## Flujos de sucursal y dueño
 
 - El dueño crea pedidos y elige una de sus sucursales asignadas.
@@ -24,6 +43,10 @@ Comprobaciones disponibles:
 ## Cambios de base de datos
 
 Los archivos SQL de `supabase/` se ejecutan manualmente en el SQL Editor de Supabase; la aplicación no los aplica automáticamente.
+
+Para habilitar el archivado individual de ingresos de planta, ejecuta `supabase/RECEPCIONES_PLANTA_ARCHIVAR.sql`. El administrador y el superadministrador pueden consultar los recibos archivados; el operador de planta y el superadministrador pueden archivarlos o restaurarlos. Esto solo los organiza en el historial y no modifica las recepciones ni el inventario.
+
+Para guardar la firma dibujada e imprimir reportes de Rosticero, asegúrate de tener creado el bucket con `supabase/STORAGE_VIDEOS.sql` y ejecuta `supabase/FIRMA_ROSTICERO.sql`. La firma se guarda como PNG en el bucket `revisiones-videos`; el administrador y el superadministrador pueden consultar reportes activos y archivados, pero no archivarlos, restaurarlos ni eliminarlos.
 
 Para habilitar los cambios de metas e inventario, sobre una base que ya tenga instalados los flujos de pedidos e inventario de planta:
 

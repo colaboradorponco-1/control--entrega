@@ -30,6 +30,7 @@ export const sucursalRepository = {
       .select(`${CAMPOS_BASICOS},${CAMPOS_EVIDENCIA}`)
       .eq('sucursal_id', sucursalId)
       .eq('fecha', hoy)
+      .is('pedido_id', null)
       .order('creado_en', { ascending: false });
 
     if (!error) return data;
@@ -42,6 +43,7 @@ export const sucursalRepository = {
       .select(CAMPOS_BASICOS)
       .eq('sucursal_id', sucursalId)
       .eq('fecha', hoy)
+      .is('pedido_id', null)
       .order('creado_en', { ascending: false });
 
     if (respaldo.error) throw respaldo.error;

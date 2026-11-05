@@ -122,6 +122,129 @@ export const planillaRepository = {
     return data || [];
   },
 
+  async listarVentasSucursal({ sucursalId, desde, hasta }) {
+    let consultaCompleta = supabase
+      .from('planilla_ventas')
+      .select('fecha, sucursal_id, unidades, transacciones, importe_bs, actualizado_en, iniciada_en, cerrada_en, archivada_en')
+      .eq('sucursal_id', Number(sucursalId));
+    if (desde) consultaCompleta = consultaCompleta.gte('fecha', desde);
+    if (hasta) consultaCompleta = consultaCompleta.lte('fecha', hasta);
+    let { data, error } = await consultaCompleta.order('fecha', { ascending: false });
+    if (!error) return data || [];
+
+    let consultaBase = supabase
+      .from('planilla_ventas')
+      .select('fecha, sucursal_id, unidades, transacciones, importe_bs, actualizado_en')
+      .eq('sucursal_id', Number(sucursalId));
+    if (desde) consultaBase = consultaBase.gte('fecha', desde);
+    if (hasta) consultaBase = consultaBase.lte('fecha', hasta);
+    ({ data, error } = await consultaBase.order('fecha', { ascending: false }));
+    if (error) throw error;
+    return data || [];
+  },
+
+  async obtenerVentaSucursal({ sucursalId, fecha }) {
+    if (!sucursalId || !fecha) return null;
+
+    let { data, error } = await supabase
+      .from('planilla_ventas')
+      .select('fecha, sucursal_id, unidades, transacciones, importe_bs, actualizado_en, iniciada_en, cerrada_en, archivada_en')
+      .eq('sucursal_id', Number(sucursalId))
+      .eq('fecha', fecha)
+      .maybeSingle();
+
+    if (!error) return data || null;
+
+    ({ data, error } = await supabase
+      .from('planilla_ventas')
+      .select('fecha, sucursal_id, unidades, transacciones, importe_bs, actualizado_en')
+      .eq('sucursal_id', Number(sucursalId))
+      .eq('fecha', fecha)
+      .maybeSingle());
+    if (error) throw error;
+    return data || null;
+  },
+
+  async listarVentasSucursales({ sucursalIds, desde, hasta }) {
+    if (!sucursalIds?.length) return [];
+    let consulta = supabase
+      .from('planilla_ventas')
+      .select('fecha, sucursal_id, unidades, transacciones, importe_bs, actualizado_en');
+    if (desde) consulta = consulta.gte('fecha', desde);
+    if (hasta) consulta = consulta.lte('fecha', hasta);
+    const { data, error } = await consulta
+      .in('sucursal_id', sucursalIds.map(Number))
+      .order('fecha', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async registrarVentaSucursal({ sucursalId, fecha, unidades, transacciones, importeBs }) {
+    const { data, error } = await supabase.rpc('registrar_venta_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+      p_unidades: Number(unidades),
+      p_transacciones: Number(transacciones),
+      p_importe_bs: Number(importeBs),
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async iniciarPlanillaVentas({ sucursalId, fecha }) {
+    const { data, error } = await supabase.rpc('iniciar_planilla_ventas_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async cerrarPlanillaVentas({ sucursalId, fecha }) {
+    const { data, error } = await supabase.rpc('cerrar_planilla_ventas_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async reabrirPlanillaVentas({ sucursalId, fecha }) {
+    const { data, error } = await supabase.rpc('reabrir_planilla_ventas_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async archivarPlanillaVentas({ sucursalId, fecha }) {
+    const { data, error } = await supabase.rpc('archivar_planilla_ventas_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async restaurarPlanillaVentas({ sucursalId, fecha }) {
+    const { data, error } = await supabase.rpc('restaurar_planilla_ventas_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async eliminarPlanillaVentasSucursal({ sucursalId, fecha }) {
+    const { data, error } = await supabase.rpc('eliminar_planilla_ventas_sucursal', {
+      p_sucursal_id: Number(sucursalId),
+      p_fecha: fecha,
+    });
+    if (error) throw error;
+    return data;
+  },
+
   async listarVentasCerradas({ semanaInicio }) {
     const { data, error } = await supabase
       .from('planillas_semanales_cerradas')
@@ -169,7 +292,7 @@ export const planillaRepository = {
     return data || [];
   },
 
-  async archivarPlanillaVentas({ semanaInicio, archivar }) {
+  async archivarPlanillaVentasSemanal({ semanaInicio, archivar }) {
     const { error } = await supabase.rpc('archivar_planilla_ventas', {
       p_semana_inicio: semanaInicio,
       p_archivar: archivar,

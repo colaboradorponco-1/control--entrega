@@ -1,16 +1,3 @@
--- ============================================================
---  DISPONIBILIDAD DE PLANTA PARA EL DUEÑO
--- ============================================================
---  Ejecutar en el SQL Editor de Supabase.
---
---  Problema: el panel del dueño consulta
---  obtener_disponibilidad_pedidos_planta() para mostrar el stock
---  y esa función solo aceptaba a operador_planta y administrador.
---  Por eso Supabase devolvía 400 (permiso denegado).
---
---  Esta versión permite también el rol 'dueno'.
--- ============================================================
-
 CREATE OR REPLACE FUNCTION public.obtener_disponibilidad_pedidos_planta()
 RETURNS TABLE (
   unidades_stock INT,
