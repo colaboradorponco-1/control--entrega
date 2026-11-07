@@ -1,31 +1,3 @@
--- ============================================================================
---  ARREGLOS PENDIENTES: EJECUTAR UNA SOLA VEZ
--- ============================================================================
---  1. Recupera el peso que se perdio del pedido #1
---  2. Diagnostico de la funcion de recepcion  <-- LEER Y PASAR
---  3. Reconstruye la funcion de recepcion
---  4. La confirmacion de entrega avisa si el despacho no existe
---
---  No borra pedidos, sucursales ni usuarios.
--- ============================================================================
-
--- ############################################################################
---  recuperar_peso.sql
--- ############################################################################
--- ============================================================
---  RECUPERAR EL PESO DEL PEDIDO #1
--- ============================================================
---  Al correr la migracion de pedidos, la columna vieja 'kilos'
---  se borro antes de copiarse a 'kilos_despachados', y el peso
---  del pedido #1 se quedo en NULL.
---
---  El valor original era 240.50 kg, confirmado antes de la
---  migracion. Se restaura ahi.
---  Ejecutar en Supabase > SQL Editor
--- ============================================================
-
--- El trigger bloquea cambiar el peso a mano, que es lo correcto
--- en el uso diario, asi que se apaga solo durante este arreglo.
 ALTER TABLE public.pedidos DISABLE TRIGGER t_pedidos_guardar;
 
 UPDATE public.pedidos
@@ -35,7 +7,6 @@ UPDATE public.pedidos
 
 ALTER TABLE public.pedidos ENABLE TRIGGER t_pedidos_guardar;
 
--- Verificacion
 SELECT p.id,
        p.unidades,
        p.kilos_despachados,
@@ -46,28 +17,6 @@ SELECT p.id,
   LEFT JOIN public.sucursales s ON s.id = p.sucursal_id
  ORDER BY p.id;
 
-
--- ############################################################################
---  arreglo_recepcion.sql
--- ############################################################################
--- ============================================================
---  DIAGNOSTICO + ARREGLO DE confirmar_recepcion_pedido
--- ============================================================
---  Sintoma: al llamar la funcion, la base responde
---  42P01  relation "public.profiles_usuario" does not exist
---  aunque esa tabla existe y se puede leer sin problema.
---
---  Este script muestra el estado real y luego deja la funcion
---  escrita con variables sueltas, el mismo patron que ya usan
---  get_user_rol() y get_user_sucursal(), que si funcionan.
---
---  Ejecutar en Supabase > SQL Editor
--- ============================================================
-
-
--- ------------------------------------------------------------
--- 1) DIAGNOSTICO: leer esto y pasamelo
--- ------------------------------------------------------------
 SELECT p.proname                       AS funcion,
        pg_get_function_identity_arguments(p.oid) AS parametros,
        l.lanname                        AS lenguaje,
@@ -79,13 +28,9 @@ SELECT p.proname                       AS funcion,
  WHERE n.nspname = 'public'
    AND p.proname IN ('confirmar_recepcion_pedido','recoger_pedido','get_user_rol')
  ORDER BY p.proname, parametros;
-
--- La tabla existe? Debe salir 'si'
 SELECT 'perfiles_usuario existe' AS chequeo,
        to_regclass('public.profiles_usuario') IS NOT NULL AS resultado;
 
--- Quien es el dueno de la funcion? Si no es postgres, puede que
--- no tenga permiso sobre el schema public.
 SELECT p.proname AS funcion,
        pg_get_userbyid(p.proowner) AS dueno,
        has_schema_privilege(p.proowner, 'public', 'USAGE') AS dueno_tiene_uso_de_public,
@@ -95,11 +40,6 @@ SELECT p.proname AS funcion,
  WHERE n.nspname = 'public'
    AND p.proname = 'confirmar_recepcion_pedido';
 
-
--- ------------------------------------------------------------
--- 2) RECONSTRUCCION DE LA FUNCION
--- Mismas reglas y validaciones, sin variable de tipo tabla.
--- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS public.confirmar_recepcion_pedido(INT, INT, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC);
 
 CREATE OR REPLACE FUNCTION public.confirmar_recepcion_pedido(

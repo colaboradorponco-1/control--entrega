@@ -3,7 +3,7 @@
 
 -- 1. Crear bucket (si no existe)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES ('revisiones-videos', 'revisiones-videos', true, 52428800, ARRAY['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo'])
+VALUES ('revisiones-videos', 'revisiones-videos', true, 52428800, ARRAY['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'image/png'])
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Políticas de storage

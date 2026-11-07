@@ -429,7 +429,7 @@ export default function PlanillaSemanal() {
       if (tipo === 'eliminar') {
         await planillaRepository.eliminarPlanillaVentas({ semanaInicio });
       } else {
-        await planillaRepository.archivarPlanillaVentas({
+        await planillaRepository.archivarPlanillaVentasSemanal({
           semanaInicio,
           archivar: tipo === 'archivar',
         });

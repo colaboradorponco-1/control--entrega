@@ -123,7 +123,7 @@ export default function EntregasDirectas() {
   return (
     <section className={`p-5 md:p-6 rounded-2xl shadow border transition-colors duration-300 ${card}`}>
       <h2 className={`text-lg font-bold mb-6 border-b pb-3 flex flex-wrap items-center justify-between gap-2 ${strong} ${divider}`}>
-        <span>Entregas directas de planta</span>
+        <span>Entregas de planta sin pedido previo</span>
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg border border-emerald-500/20">
             {entregas.length} registros
@@ -154,7 +154,7 @@ export default function EntregasDirectas() {
       {cargando ? (
         <p className={`text-center py-12 ${muted}`}>Cargando despachos...</p>
       ) : entregas.length === 0 ? (
-        <p className={`text-center py-12 ${muted}`}>No hay despachos directos registrados para esta sucursal.</p>
+        <p className={`text-center py-12 ${muted}`}>No hay entregas de planta sin pedido previo registradas para esta sucursal hoy.</p>
       ) : (
         <div className={`overflow-x-auto rounded-xl border -mx-5 md:mx-0 ${divider}`}>
           <table className="w-full text-left border-collapse min-w-[620px]">

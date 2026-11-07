@@ -4,16 +4,27 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../config/supabaseClient';
 import { authRepository } from '../../repositories/AuthRepository';
+import { evidenciasRepository } from '../../repositories/evidenciasRepository';
+import FirmaCanvas from '../../components/FirmaCanvas';
 import {
   ArrowLeft, LogOut, Sun, Moon, Loader2, Plus, X,
   ClipboardList, CheckCircle, Trash2, AlertCircle, Archive, ArchiveRestore,
-  Search, ChevronLeft, ChevronRight,
+  Search, ChevronLeft, ChevronRight, Printer,
 } from 'lucide-react';
 import {
   normalizarBusqueda,
   POR_PAGINA,
   rangoUltimos30Dias,
 } from '../../utils/filtrosHistorial';
+
+const escaparHtml = (valor) => String(valor ?? 'No registrado').replace(/[&<>"']/g, (caracter) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+})[caracter]);
+const textoNoInformado = 'No registrado';
 
 export default function ReporteRosticero() {
   const { darkMode, toggleTheme } = useTheme();
@@ -61,6 +72,8 @@ export default function ReporteRosticero() {
   const strong = darkMode ? 'text-white' : 'text-gray-900';
   const normal = darkMode ? 'text-slate-300' : 'text-gray-700';
   const puedeGestionarReportes = perfil?.roles?.nombre === 'rosticero';
+  const puedeVerArchivados = puedeGestionarReportes
+    || ['administrador', 'superadmin', 'superadministrador'].includes(perfil?.roles?.nombre);
 
   const cargar = useCallback(async (paginaSolicitada = pagina) => {
     try {
@@ -123,11 +136,17 @@ export default function ReporteRosticero() {
 
       let firmaUrl = null;
       if (firma) {
-        const fileName = 'rosticero-firma-' + Date.now() + '.png';
+        const archivoFirma = evidenciasRepository.dataUrlABlob(firma);
+        const fileName = `rosticero-firmas/${form.sucursal_id}-${form.fecha}-${Date.now()}.png`;
         const { data: uploadData, error: uploadErr } = await supabase.storage
           .from('revisiones-videos')
-          .upload(fileName, firma, { cacheControl: '3600', upsert: false });
-        if (uploadErr) throw uploadErr;
+          .upload(fileName, archivoFirma, { cacheControl: '3600', upsert: false, contentType: 'image/png' });
+        if (uploadErr) {
+          if (/mime type .* is not supported/i.test(uploadErr.message || '')) {
+            throw new Error('Supabase todavía no acepta firmas PNG. Ejecuta nuevamente supabase/FIRMA_ROSTICERO.sql en el SQL Editor y vuelve a guardar el reporte.');
+          }
+          throw uploadErr;
+        }
         const { data: urlData } = supabase.storage
           .from('revisiones-videos')
           .getPublicUrl(uploadData.path);
@@ -209,6 +228,76 @@ export default function ReporteRosticero() {
     }
   };
 
+  const imprimirReporte = (reporte) => {
+    const ventana = window.open('', '_blank', 'width=850,height=750');
+    if (!ventana) {
+      setError('Permite las ventanas emergentes para imprimir el reporte.');
+      return;
+    }
+
+    const fechaReporte = reporte.fecha
+      ? new Date(`${reporte.fecha}T12:00:00`).toLocaleDateString('es-BO')
+      : textoNoInformado;
+    const campos = [
+      ['Sucursal', reporte.sucursales?.nombre || `Sucursal ${reporte.sucursal_id}`],
+      ['Sector', reporte.sucursales?.sector || textoNoInformado],
+      ['Fecha', fechaReporte],
+      ['Hora de ingreso', reporte.hora_ingreso || textoNoInformado],
+      ['Saldo inicial', reporte.saldo_inicio_dia],
+      ['Ingresos del día', reporte.ingresos_dia],
+      ['Total para hornear', reporte.total_pollos_hornear],
+      ['Saldo final', reporte.saldo_final_dia],
+      ['Pollos vendidos', reporte.pollos_vendidos],
+      ['Pollos vendidos según sistema', reporte.pollos_vendidos_sistema ?? textoNoInformado],
+      ['Cajero', reporte.cajero || textoNoInformado],
+      ['Supervisor', reporte.supervisor || textoNoInformado],
+      ['Registrado por', reporte.creado_por_nombre || textoNoInformado],
+      ['Observaciones', reporte.observaciones_detalle || textoNoInformado],
+    ];
+    const observaciones = [
+      reporte.obs_pollos_enfermos && 'Pollos enfermos',
+      reporte.obs_pollos_pequenos && 'Pollos pequeños',
+      reporte.obs_otros && 'Otros',
+    ].filter(Boolean);
+
+    ventana.document.write(`<!doctype html>
+      <html lang="es"><head><meta charset="utf-8">
+      <title>Reporte rosticero ${escaparHtml(reporte.sucursales?.nombre || reporte.id)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;color:#111827;margin:32px}
+        h1{font-size:22px;margin:0 0 6px}p{color:#4b5563;margin:0 0 20px}
+        table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px;border-bottom:1px solid #d1d5db}
+        th{width:35%;color:#374151}.firma{margin-top:32px;width:280px;text-align:center}
+        .firma img{display:block;width:100%;height:100px;object-fit:contain;border-bottom:1px solid #111827}
+        .firma span{display:block;margin-top:8px;font-size:12px}
+        @media print{body{margin:12mm}}
+      </style></head><body>
+      <h1>Reporte diario de Rosticero</h1>
+      <p>Sistema de Control Avícola</p>
+      <table>${campos.map(([etiqueta, valor]) => `<tr><th>${escaparHtml(etiqueta)}</th><td>${escaparHtml(valor)}</td></tr>`).join('')}</table>
+      <p style="margin-top:16px"><strong>Observaciones marcadas:</strong> ${escaparHtml(observaciones.join(', ') || 'Ninguna')}</p>
+      ${reporte.firma_url ? `<div class="firma"><img src="${escaparHtml(reporte.firma_url)}" alt="Firma del responsable"><span>Firma del responsable</span></div>` : ''}
+      </body></html>`);
+    ventana.document.close();
+    const imagenes = [...ventana.document.images];
+    Promise.all(imagenes.map((imagen) => (
+      imagen.complete
+        ? (imagen.naturalWidth > 0
+          ? Promise.resolve()
+          : Promise.reject(new Error('No se pudo cargar la firma del reporte.')))
+        : new Promise((resolve, reject) => {
+          imagen.onload = resolve;
+          imagen.onerror = () => reject(new Error('No se pudo cargar la firma del reporte.'));
+        })
+    ))).then(() => {
+      ventana.focus();
+      ventana.print();
+    }).catch((err) => {
+      ventana.close();
+      setError(err.message || 'No se pudo preparar el reporte para imprimir.');
+    });
+  };
+
   return (
     <div className={`min-h-screen ${darkMode ? 'bg-slate-950 text-slate-200' : 'bg-gray-50 text-gray-800'}`}>
       <header className={`${card} border-b sticky top-0 z-30`}>
@@ -244,19 +333,26 @@ export default function ReporteRosticero() {
         )}
 
         <div className="flex items-center justify-between mb-6">
-          <p className={`text-sm ${muted}`}>Reporte diario de pollos rostizados por sucursal.</p>
+          <div className={`text-sm ${muted}`}>
+            <p>Reporte diario de pollos rostizados por sucursal.</p>
+            <p className="mt-1 text-xs">
+              Vendidos (conteo) se calcula: total para hornear menos saldo final. Vendidos (sistema) es el dato que se anota manualmente para comparar.
+            </p>
+          </div>
           <div className="flex items-center gap-2">
+            {puedeVerArchivados && (
+              <button
+                onClick={() => {
+                  setVerArchivados((actual) => !actual);
+                  setPagina(0);
+                }}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${input}`}
+              >
+                {verArchivados ? 'Ver activos' : 'Ver archivados'}
+              </button>
+            )}
             {puedeGestionarReportes && (
               <>
-                <button
-                  onClick={() => {
-                    setVerArchivados((actual) => !actual);
-                    setPagina(0);
-                  }}
-                  className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-bold transition ${input}`}
-                >
-                  {verArchivados ? 'Ver activos' : 'Ver archivados'}
-                </button>
                 <button
                   onClick={() => setMostrarForm(true)}
                   className="flex items-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-purple-700"
@@ -414,13 +510,16 @@ export default function ReporteRosticero() {
                     <p className={`text-lg font-black ${strong}`}>{pollosVendidos}</p>
                   </div>
                   <label className={`block text-xs ${muted}`}>
-                    Pollos vend. según sistema
+                    Pollos vendidos según sistema
                     <input
                       type="number" min="0" step="1"
                       value={form.pollos_vendidos_sistema}
                       onChange={(e) => setForm({ ...form, pollos_vendidos_sistema: e.target.value })}
                       className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm ${input}`}
                     />
+                    <span className={`mt-1 block text-[11px] ${muted}`}>
+                      Anota aquí las ventas que muestra el sistema. Es un dato opcional de comparación.
+                    </span>
                   </label>
                 </div>
               </div>
@@ -486,18 +585,21 @@ export default function ReporteRosticero() {
                 </label>
               </div>
 
-              <label className={`block text-xs font-semibold uppercase tracking-wider ${muted}`}>
-                Firma (imagen)
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setFirma(e.target.files?.[0] || null)}
-                  className={`mt-2 w-full rounded-xl border px-4 py-2 text-sm ${input}`}
-                />
-                {firma && (
-                  <p className={`mt-1 text-[11px] ${muted}`}>{firma.name}</p>
-                )}
-              </label>
+              <FirmaCanvas
+                titulo="Firma del responsable"
+                onCambio={(dataUrl) => {
+                  setFirma(dataUrl);
+                }}
+                theme={{
+                  card: darkMode ? 'bg-slate-950/60' : 'bg-white',
+                  borde: darkMode ? 'border-slate-700' : 'border-gray-300',
+                  texto: darkMode ? 'text-slate-300' : 'text-gray-600',
+                  tenue: darkMode ? 'text-slate-500' : 'text-gray-400',
+                  btn: darkMode
+                    ? 'border border-slate-700 text-slate-300'
+                    : 'border border-gray-300 text-gray-600',
+                }}
+              />
 
               <div className="flex gap-3 pt-2">
                 <button
@@ -541,34 +643,37 @@ export default function ReporteRosticero() {
                       <span className={`text-sm font-bold ${strong}`}>
                         {r.sucursales?.nombre || `Sucursal ${r.sucursal_id}`}
                       </span>
-                      <span className={`text-[10px] ${muted}`}>
-                        {new Date(r.fecha).toLocaleDateString('es-BO')} · {r.hora_ingreso || '—'}
+                      <span className={`text-xs ${muted}`}>
+                        {new Date(`${r.fecha}T12:00:00`).toLocaleDateString('es-BO')}
+                        {r.hora_ingreso ? ` · ${r.hora_ingreso}` : ''}
                       </span>
                     </div>
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                      <div className={`rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                        <p className={`text-[9px] ${muted}`}>Inicio</p>
-                        <p className={`text-sm font-bold ${strong}`}>{r.saldo_inicio_dia}</p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-3 xl:grid-cols-6">
+                      <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                        <p className={`text-xs ${muted}`}>Saldo inicial</p>
+                        <p className={`mt-1 text-lg font-bold ${strong}`}>{r.saldo_inicio_dia}</p>
                       </div>
-                      <div className={`rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                        <p className={`text-[9px] ${muted}`}>Ingresos</p>
-                        <p className={`text-sm font-bold ${strong}`}>{r.ingresos_dia}</p>
+                      <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                        <p className={`text-xs ${muted}`}>Ingresos del día</p>
+                        <p className={`mt-1 text-lg font-bold ${strong}`}>{r.ingresos_dia}</p>
                       </div>
-                      <div className={`rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                        <p className={`text-[9px] ${muted}`}>Hornear</p>
-                        <p className={`text-sm font-bold ${strong}`}>{r.total_pollos_hornear}</p>
+                      <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                        <p className={`text-xs ${muted}`}>Total para hornear</p>
+                        <p className={`mt-1 text-lg font-bold ${strong}`}>{r.total_pollos_hornear}</p>
                       </div>
-                      <div className={`rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                        <p className={`text-[9px] ${muted}`}>Final</p>
-                        <p className={`text-sm font-bold ${strong}`}>{r.saldo_final_dia}</p>
+                      <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                        <p className={`text-xs ${muted}`}>Saldo final</p>
+                        <p className={`mt-1 text-lg font-bold ${strong}`}>{r.saldo_final_dia}</p>
                       </div>
-                      <div className={`rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                        <p className={`text-[9px] ${muted}`}>Vendidos</p>
-                        <p className={`text-sm font-bold ${strong}`}>{r.pollos_vendidos}</p>
+                      <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                        <p className={`text-xs ${muted}`}>Vendidos (conteo)</p>
+                        <p className={`mt-1 text-lg font-bold ${strong}`}>{r.pollos_vendidos}</p>
                       </div>
-                      <div className={`rounded-lg p-2 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
-                        <p className={`text-[9px] ${muted}`}>Sistema</p>
-                        <p className={`text-sm font-bold ${strong}`}>{r.pollos_vendidos_sistema ?? '—'}</p>
+                      <div className={`rounded-xl p-3 ${darkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
+                        <p className={`text-xs ${muted}`}>Vendidos (sistema)</p>
+                        <p className={`mt-1 ${r.pollos_vendidos_sistema == null ? `text-xs ${muted}` : `text-lg font-bold ${strong}`}`}>
+                          {r.pollos_vendidos_sistema ?? textoNoInformado}
+                        </p>
                       </div>
                     </div>
                     {(r.obs_pollos_enfermos || r.obs_pollos_pequenos || r.obs_otros) && (
@@ -607,21 +712,28 @@ export default function ReporteRosticero() {
                       <p className={`mt-2 text-xs italic ${muted}`}>“{r.observaciones_detalle}”</p>
                     )}
                     <p className={`mt-2 text-[10px] ${muted}`}>
-                      Cajero: {r.cajero || '—'} · Supervisor: {r.supervisor || '—'} · Por: {r.creado_por_nombre || '—'}
+                      Cajero: {r.cajero || textoNoInformado} · Supervisor: {r.supervisor || textoNoInformado} · Registrado por: {r.creado_por_nombre || textoNoInformado}
                     </p>
                     {r.firma_url && (
-                      <a
-                        href={r.firma_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-amber-500 hover:underline"
-                      >
-                        Ver firma
-                      </a>
+                      <img
+                        src={r.firma_url}
+                        alt={`Firma del responsable del reporte de ${r.sucursales?.nombre || 'la sucursal'}`}
+                        className="mt-3 h-20 max-w-xs rounded-lg border border-slate-300 bg-white object-contain p-2"
+                      />
                     )}
                   </div>
-                  {puedeGestionarReportes && (
-                    <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => imprimirReporte(r)}
+                      title="Imprimir reporte"
+                      aria-label={`Imprimir reporte de ${r.sucursales?.nombre || 'la sucursal'}`}
+                      className={`rounded-lg p-2 ${muted} hover:text-cyan-500 hover:bg-cyan-500/10`}
+                    >
+                      <Printer size={14} />
+                    </button>
+                    {puedeGestionarReportes && (
+                      <>
                       {!verArchivados && (
                         <button
                           onClick={() => archivarReporte(r.id, true)}
@@ -652,8 +764,9 @@ export default function ReporteRosticero() {
                           </button>
                         </>
                       )}
-                    </div>
-                  )}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

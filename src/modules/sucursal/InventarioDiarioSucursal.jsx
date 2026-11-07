@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertCircle, Boxes, CheckCircle, Clock3, Download, Search,
+  AlertCircle, Archive, Boxes, CheckCircle, Clock3, Download, Search,
   Loader2, Plus, Printer, RefreshCw, Save, Trash2, X,
 } from 'lucide-react';
 import { supabase } from '../../config/supabaseClient';
@@ -25,12 +25,18 @@ const horaActual = () => new Intl.DateTimeFormat('en-GB', {
 
 const normalizarFila = (data) => (Array.isArray(data) ? data[0] : data);
 
+const normalizarIngresoManual = (valor) => {
+  const numero = Number(valor);
+  return Number.isFinite(numero) && numero >= 0 ? Math.trunc(numero) : 0;
+};
+
 export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, darkMode }) {
   const [fecha, setFecha] = useState(fechaHoyBolivia());
   const [inventario, setInventario] = useState(null);
   const [historial, setHistorial] = useState([]);
   const [pollosCrudos, setPollosCrudos] = useState('');
   const [ingresoUnidades, setIngresoUnidades] = useState('');
+  const [ingresoManualGuardado, setIngresoManualGuardado] = useState(0);
   const [observacionesProducto, setObservacionesProducto] = useState('');
   const [horaCorte, setHoraCorte] = useState(horaActual());
   const [observaciones, setObservaciones] = useState('');
@@ -38,6 +44,7 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
   const [filtroHasta, setFiltroHasta] = useState('');
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
   const [filtroEstadoHistorial, setFiltroEstadoHistorial] = useState('todos');
+  const [bandejaHistorial, setBandejaHistorial] = useState('activos');
   const [mostrarPlanilla, setMostrarPlanilla] = useState(false);
   const [confirmacion, setConfirmacion] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -57,7 +64,7 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
           .maybeSingle(),
         supabase
           .from('inventario_sucursal')
-          .select('id, fecha, pollos_crudos, pollos_crudos_contados, pollos_crudos_iniciales, pollos_recibidos, pollos_ingreso_manual, pollos_recibidos_en_conteo, conteo_guardado_en, actualizado_por_nombre, hora_corte, cerrado_en')
+          .select('id, fecha, pollos_crudos, pollos_crudos_contados, pollos_crudos_iniciales, pollos_recibidos, pollos_ingreso_manual, pollos_recibidos_en_conteo, conteo_guardado_en, actualizado_por_nombre, hora_corte, cerrado_en, archivado, archivado_en')
           .eq('sucursal_id', sucursalId)
           .not('hora_corte', 'is', null)
           .order('fecha', { ascending: false })
@@ -74,7 +81,9 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
           : '');
         setObservaciones(actual.data?.observaciones || '');
         setObservacionesProducto(actual.data?.observaciones_producto || '');
-        setIngresoUnidades('');
+        const ajusteGuardado = normalizarIngresoManual(actual.data?.pollos_ingreso_manual);
+        setIngresoManualGuardado(ajusteGuardado);
+        setIngresoUnidades(String(ajusteGuardado));
       }
       setMensaje(null);
     } catch (error) {
@@ -104,23 +113,18 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
   }, [cargar, sucursalId]);
 
   const hoy = fechaHoyBolivia();
-  const ingresoAutomatico = Math.max(
-    0,
-    (Number(inventario?.pollos_recibidos) || 0) - (Number(inventario?.pollos_ingreso_manual) || 0),
-  );
   const ingresoManualPendiente = Number(ingresoUnidades) || 0;
   const disponible = (Number(inventario?.pollos_crudos_iniciales) || 0)
-    + (Number(inventario?.pollos_recibidos) || 0) + ingresoManualPendiente;
+    + ingresoManualPendiente;
   const contado = Number(pollosCrudos) || 0;
   const cerrado = Boolean(inventario?.cerrado_en);
   const conteoGuardado = Boolean(
     pollosCrudos !== ''
-      && ingresoUnidades === ''
       && inventario?.conteo_guardado_en
       && Number(inventario.pollos_crudos_contados ?? inventario.pollos_crudos) === contado,
   );
   const disponibleAlGuardar = (Number(inventario?.pollos_crudos_iniciales) || 0)
-    + (Number(inventario?.pollos_recibidos_en_conteo ?? inventario?.pollos_recibidos) || 0);
+    + (Number(inventario?.pollos_ingreso_manual) || 0);
   const disponibleParaConteo = conteoGuardado ? disponibleAlGuardar : disponible;
   const diferencia = pollosCrudos === ''
     ? null
@@ -137,6 +141,8 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
   const historialVisible = useMemo(() => {
     const termino = busquedaHistorial.trim().toLocaleLowerCase('es-BO');
     return historial.filter((registro) => {
+      if (bandejaHistorial === 'activos' && registro.archivado) return false;
+      if (bandejaHistorial === 'archivados' && !registro.archivado) return false;
       if (filtroDesde && registro.fecha < filtroDesde) return false;
       if (filtroHasta && registro.fecha > filtroHasta) return false;
       if (filtroEstadoHistorial === 'abiertos' && registro.cerrado_en) return false;
@@ -147,7 +153,7 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
         .toLocaleLowerCase('es-BO')
         .includes(termino);
     });
-  }, [busquedaHistorial, filtroDesde, filtroHasta, filtroEstadoHistorial, historial, nombreSucursal]);
+  }, [bandejaHistorial, busquedaHistorial, filtroDesde, filtroHasta, filtroEstadoHistorial, historial, nombreSucursal]);
 
   const iniciarInventario = async () => {
     if (!horaCorte) {
@@ -166,6 +172,9 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
       setPollosCrudos(String(fila?.pollos_crudos_contados ?? (fila?.cerrado_en ? fila.pollos_crudos : '')));
       setObservaciones(fila?.observaciones || '');
       setObservacionesProducto(fila?.observaciones_producto || '');
+      const ajusteGuardado = Number(fila?.pollos_ingreso_manual) || 0;
+      setIngresoManualGuardado(ajusteGuardado);
+      setIngresoUnidades(String(ajusteGuardado));
       setMostrarPlanilla(true);
       setMensaje({ tipo: 'exito', texto: 'Inventario del día iniciado.' });
       await cargar({ silencioso: true });
@@ -178,12 +187,12 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
 
   const guardarConteo = async (cerrar = false) => {
     const crudos = pollosCrudos === '' ? null : Number(pollosCrudos);
-    const ingresoManual = ingresoUnidades === '' ? 0 : Number(ingresoUnidades);
+    const ingresoManualNuevo = ingresoUnidades === '' ? 0 : Number(ingresoUnidades);
     if ((cerrar && crudos === null) || (crudos !== null && (!Number.isInteger(crudos) || crudos < 0))) {
       setMensaje({ tipo: 'error', texto: 'Ingresa una cantidad entera igual o mayor que cero.' });
       return false;
     }
-    if (!Number.isInteger(ingresoManual) || ingresoManual < 0) {
+    if (!Number.isInteger(ingresoManualNuevo) || ingresoManualNuevo < 0) {
       setMensaje({ tipo: 'error', texto: 'El ingreso manual debe ser un número entero igual o mayor que cero.' });
       return false;
     }
@@ -192,7 +201,7 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
       setGuardando(true);
       const { data, error } = await supabase.rpc('guardar_conteo_inventario_crudo_sucursal', {
         p_pollos_crudos: crudos,
-        p_ingreso_manual: ingresoManual,
+        p_ingreso_manual: ingresoManualNuevo,
         p_observaciones_producto: observacionesProducto.trim() || null,
         p_cerrar: cerrar,
         p_observaciones: observaciones.trim() || null,
@@ -201,7 +210,9 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
       const fila = normalizarFila(data);
       setInventario(fila);
       setPollosCrudos(fila?.pollos_crudos_contados == null ? '' : String(fila.pollos_crudos_contados));
-      setIngresoUnidades('');
+      const ajusteGuardado = Number(fila?.pollos_ingreso_manual) || 0;
+      setIngresoManualGuardado(ajusteGuardado);
+      setIngresoUnidades(String(ajusteGuardado));
       setObservaciones(fila?.observaciones || '');
       setObservacionesProducto(fila?.observaciones_producto || '');
       setMensaje({
@@ -219,12 +230,21 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
   };
 
   const cerrarGuardandoConteo = async () => {
-    if (!inventario || !iniciado || cerrado || !esHoy) {
-      setMostrarPlanilla(false);
-      return;
+    if (inventario) {
+      setPollosCrudos(
+        inventario.pollos_crudos_contados == null
+          ? ''
+          : String(inventario.pollos_crudos_contados),
+      );
+      setObservaciones(inventario.observaciones || '');
+      setObservacionesProducto(inventario.observaciones_producto || '');
+      const ajusteGuardado = Number(inventario.pollos_ingreso_manual) || 0;
+      setIngresoManualGuardado(ajusteGuardado);
+      setIngresoUnidades(String(ajusteGuardado));
     }
-    const guardado = await guardarConteo(false);
-    if (guardado) setMostrarPlanilla(false);
+    setFecha(fechaHoyBolivia());
+    setInventario(null);
+    setMostrarPlanilla(false);
   };
 
   const abrirPlanilla = async (registro) => {
@@ -245,7 +265,9 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
       setPollosCrudos(data.pollos_crudos_contados == null
         ? (data.cerrado_en ? String(data.pollos_crudos) : '')
         : String(data.pollos_crudos_contados));
-      setIngresoUnidades('');
+      const ajusteGuardado = Number(data?.pollos_ingreso_manual) || 0;
+      setIngresoManualGuardado(ajusteGuardado);
+      setIngresoUnidades(String(ajusteGuardado));
       setObservaciones(data.observaciones || '');
       setObservacionesProducto(data.observaciones_producto || '');
       setHoraCorte(data.hora_corte ? String(data.hora_corte).slice(0, 5) : horaActual());
@@ -257,18 +279,22 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
     }
   };
 
-  const eliminarPlanilla = async () => {
+  const eliminarPlanilla = async (id) => {
+    if (!id || !window.confirm('¿Eliminar definitivamente esta planilla archivada? Esta acción no se puede deshacer.')) return;
     try {
       setEliminando(true);
-      const { error } = await supabase.rpc('eliminar_planilla_inventario_sucursal');
+      const { error } = await supabase.rpc('eliminar_planilla_inventario_sucursal', {
+        p_inventario_id: id,
+      });
       if (error) throw error;
       setInventario(null);
       setPollosCrudos('');
       setIngresoUnidades('');
+      setIngresoManualGuardado(0);
       setObservacionesProducto('');
       setObservaciones('');
       setMostrarPlanilla(false);
-      setMensaje({ tipo: 'exito', texto: 'Planilla eliminada. Las recepciones automáticas se conservaron.' });
+      setMensaje({ tipo: 'exito', texto: 'Planilla archivada eliminada definitivamente.' });
       await cargar({ silencioso: true });
     } catch (error) {
       setMensaje({ tipo: 'error', texto: error.message || 'No se pudo eliminar la planilla.' });
@@ -277,12 +303,31 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
     }
   };
 
+  const archivarPlanillaInventario = async (id, archivado = false) => {
+    try {
+      setGuardando(true);
+      const { error } = await supabase.rpc('archivar_inventario_sucursal', {
+        p_inventario_id: id,
+        p_archivado: !archivado,
+      });
+      if (error) throw error;
+      setMensaje({
+        tipo: 'exito',
+        texto: archivado ? 'Planilla restaurada correctamente.' : 'Planilla archivada correctamente.',
+      });
+      await cargar({ silencioso: true });
+      if (!archivado) setMostrarPlanilla(false);
+    } catch (error) {
+      setMensaje({ tipo: 'error', texto: error.message || 'No se pudo archivar la planilla.' });
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   const confirmarAccion = async () => {
     const accionConfirmada = confirmacion;
     setConfirmacion(null);
-    if (accionConfirmada === 'eliminar') {
-      await eliminarPlanilla();
-    } else if (accionConfirmada === 'cerrar') {
+    if (accionConfirmada === 'cerrar') {
       await guardarConteo(true);
     }
   };
@@ -298,15 +343,15 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
         'Pollo crudo',
         'unidad',
         inventario.pollos_crudos_iniciales || 0,
-        inventario.pollos_recibidos || 0,
+        inventario.pollos_ingreso_manual || 0,
         disponibleParaConteo,
         conteoExportado,
         conteoExportado === '' ? '' : Number(conteoExportado) - disponibleParaConteo,
         inventario.observaciones_producto || '',
       ],
     ];
-    filas[0].splice(5, 0, 'Ingreso manual', 'Ingreso automático');
-    filas[1].splice(5, 0, inventario.pollos_ingreso_manual || 0, ingresoAutomatico);
+    filas[0].splice(5, 0, 'Ingreso manual');
+    filas[1].splice(5, 0, inventario.pollos_ingreso_manual || 0);
     filas[0].push('Observaciones generales');
     filas[1].push(inventario.observaciones || '');
     const contenido = filas.map((fila) => fila.map((celda) => `"${String(celda).replaceAll('"', '""')}"`).join(',')).join('\r\n');
@@ -362,8 +407,8 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
               onClick={cerrarGuardandoConteo}
               disabled={guardando || eliminando}
               className={secundario}
-              aria-label="Guardar borrador y cerrar planilla"
-              title="Guardar los cambios sin ajustar el stock y volver a la lista"
+              aria-label="Cerrar planilla sin guardar cambios nuevos"
+              title="Cerrar sin guardar los cambios nuevos"
             >
               <X size={15} />
             </button>
@@ -440,8 +485,7 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
           </div>
           <div className={`mx-4 mt-3 grid grid-cols-2 gap-2 rounded-lg border p-3 text-[11px] font-bold uppercase tracking-wide md:grid-cols-3 xl:grid-cols-6 ${darkMode ? 'border-slate-800 bg-slate-950 text-slate-400' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
             <span>Inicial: {Number(inventario.pollos_crudos_iniciales) || 0}</span>
-            <span>Ingreso sistema: {ingresoAutomatico}</span>
-            <span>Ingreso manual: {(Number(inventario.pollos_ingreso_manual) || 0) + ingresoManualPendiente}</span>
+            <span>Ingreso manual: {ingresoManualPendiente}</span>
             <span>Disponible: {disponible}</span>
             <span>Conteo final: {pollosCrudos === '' ? '—' : contado}</span>
             <span>Diferencia: {diferencia === null ? '—' : diferencia > 0 ? `+${diferencia}` : diferencia}</span>
@@ -468,9 +512,6 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
                   <td className={`px-3 py-3 text-right tabular-nums ${muted}`}>{Number(inventario.pollos_crudos_iniciales) || 0}</td>
                   <td className="px-3 py-3">
                     <div className="space-y-1.5">
-                      <p className="text-xs font-semibold text-emerald-600">
-                        Sistema: +{ingresoAutomatico}
-                      </p>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
@@ -478,18 +519,31 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
                           step="1"
                           value={ingresoUnidades}
                           disabled={cerrado || !esHoy}
-                          onChange={(event) => setIngresoUnidades(event.target.value)}
+                          onChange={(event) => {
+                            const valor = event.target.value;
+                            if (valor === '') {
+                              setIngresoUnidades('');
+                              return;
+                            }
+
+                            const numero = Number(valor);
+                            if (!Number.isFinite(numero)) {
+                              return;
+                            }
+
+                            setIngresoUnidades(String(Math.max(0, Math.trunc(numero))));
+                          }}
                           placeholder="0"
                           className={`w-24 rounded-lg border px-2 py-1.5 text-right text-sm font-semibold disabled:opacity-60 ${input}`}
                           aria-label="Ingreso manual de pollos crudos"
                         />
-                        {ingresoUnidades !== '' && !cerrado && esHoy && (
+                        {Number(ingresoUnidades) !== ingresoManualGuardado && !cerrado && esHoy && (
                           <button
                             type="button"
-                            onClick={() => setIngresoUnidades('')}
+                            onClick={() => setIngresoUnidades(String(ingresoManualGuardado))}
                             className={`rounded-md border p-1.5 ${input}`}
-                            aria-label="Borrar ingreso manual sin guardar"
-                            title="Borrar ingreso manual sin guardar"
+                            aria-label="Limpiar ingreso manual no guardado"
+                            title="Limpiar ingreso manual no guardado"
                           >
                             <X size={13} />
                           </button>
@@ -555,22 +609,24 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
               <textarea value={observaciones} onChange={(event) => setObservaciones(event.target.value)} disabled={cerrado || !esHoy} maxLength={500} rows={2} placeholder="Anota novedades del inventario" className={`mt-1 block w-full resize-y rounded-lg border px-3 py-2 text-sm font-normal disabled:opacity-60 ${input}`} />
             </label>
             {inventario.cerrado_en ? (
-              <span className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-500">
-                <CheckCircle size={14} /> Cierre confirmado
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-500">
+                  <CheckCircle size={14} /> Cierre confirmado
+                </span>
+                <button
+                  type="button"
+                  onClick={() => archivarPlanillaInventario(inventario.id, Boolean(inventario.archivado))}
+                  disabled={guardando || eliminando}
+                  className={secundario}
+                >
+                  <Archive size={14} />
+                  {inventario.archivado ? 'Restaurar planilla' : 'Archivar planilla'}
+                </button>
+              </div>
             ) : esHoy ? (
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={exportar} className={secundario}><Download size={14} /> Exportar planilla</button>
                 <button type="button" onClick={() => window.print()} className={secundario}><Printer size={14} /> Imprimir planilla</button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmacion('eliminar')}
-                  disabled={guardando || eliminando}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/40 px-3 py-2 text-xs font-bold text-red-500 transition hover:bg-red-500/10 disabled:opacity-50"
-                >
-                  {eliminando ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                  Borrar planilla
-                </button>
                 <button type="button" onClick={() => guardarConteo(false)} disabled={guardando || eliminando} className={secundario}>
                   {guardando ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   Guardar conteo
@@ -606,6 +662,30 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
         </div>
         {historial.length ? (
           <>
+            <div className="mb-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setBandejaHistorial('activos')}
+                className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                  bandejaHistorial === 'activos'
+                    ? 'border-amber-500 bg-amber-500 text-white'
+                    : 'border-inherit text-slate-500 hover:bg-slate-500/10'
+                }`}
+              >
+                Planillas activas ({historial.filter((registro) => !registro.archivado).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setBandejaHistorial('archivados')}
+                className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${
+                  bandejaHistorial === 'archivados'
+                    ? 'border-slate-600 bg-slate-600 text-white'
+                    : 'border-inherit text-slate-500 hover:bg-slate-500/10'
+                }`}
+              >
+                <span className="inline-flex items-center gap-1.5"><Archive size={13} /> Archivados ({historial.filter((registro) => registro.archivado).length})</span>
+              </button>
+            </div>
             <div className="mb-3 grid gap-2 md:grid-cols-2 xl:grid-cols-[1fr_1fr_1.5fr_1fr_auto_auto]">
               <label className={`text-xs font-semibold ${muted}`}>
                 Desde
@@ -654,7 +734,7 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
                   {historialVisible.map((registro) => {
                     const conteo = registro.pollos_crudos_contados ?? (registro.cerrado_en ? registro.pollos_crudos : null);
                     const disponibleRegistro = (Number(registro.pollos_crudos_iniciales) || 0)
-                      + (Number(registro.pollos_recibidos_en_conteo ?? registro.pollos_recibidos) || 0);
+                      + (Number(registro.pollos_ingreso_manual) || 0);
                     const diferenciaRegistro = conteo === null || !registro.conteo_guardado_en
                       ? null
                       : Number(conteo) - disponibleRegistro;
@@ -679,9 +759,29 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
                         <td className="px-3 py-3 text-right font-semibold tabular-nums text-amber-600">{diferenciaRegistro === null ? '—' : Math.max(-diferenciaRegistro, 0)}</td>
                         <td className="px-3 py-3 text-right font-semibold tabular-nums text-blue-500">{diferenciaRegistro === null ? '—' : Math.max(diferenciaRegistro, 0)}</td>
                         <td className="px-3 py-3 text-right">
-                          <button type="button" onClick={() => abrirPlanilla(registro)} disabled={cargando} className="rounded-lg border border-amber-500/40 px-3 py-1.5 font-bold text-amber-600 transition hover:bg-amber-500/10 disabled:opacity-50">
-                            Abrir
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            {registro.archivado && (
+                              <>
+                                <button type="button" onClick={() => archivarPlanillaInventario(registro.id, true)} disabled={guardando || cargando} className="rounded-lg border border-slate-400/50 px-3 py-1.5 font-bold text-slate-600 transition hover:bg-slate-500/10 disabled:opacity-50">
+                                  Restaurar
+                                </button>
+                                <button type="button" onClick={() => eliminarPlanilla(registro.id)} disabled={guardando || cargando || eliminando} className="inline-flex items-center gap-1 rounded-lg border border-red-500/40 px-3 py-1.5 font-bold text-red-600 transition hover:bg-red-500/10 disabled:opacity-50">
+                                  {eliminando ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                                  Eliminar
+                                </button>
+                              </>
+                            )}
+                            {!registro.archivado && (
+                              <>
+                                <button type="button" onClick={() => abrirPlanilla(registro)} disabled={cargando} className="rounded-lg border border-amber-500/40 px-3 py-1.5 font-bold text-amber-600 transition hover:bg-amber-500/10 disabled:opacity-50">
+                                  Abrir
+                                </button>
+                                <button type="button" onClick={() => archivarPlanillaInventario(registro.id, false)} disabled={guardando || cargando} className="rounded-lg border border-slate-400/50 px-3 py-1.5 font-bold text-slate-600 transition hover:bg-slate-500/10 disabled:opacity-50">
+                                  <span className="inline-flex items-center gap-1"><Archive size={13} />Archivar</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -701,12 +801,10 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="presentation">
           <div role="dialog" aria-modal="true" aria-labelledby="confirmacion-inventario-titulo" className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${card}`}>
             <h3 id="confirmacion-inventario-titulo" className={`text-base font-black ${texto}`}>
-              {confirmacion === 'eliminar' ? '¿Borrar la planilla de hoy?' : '¿Cerrar el inventario de hoy?'}
+              ¿Cerrar el inventario de hoy?
             </h3>
             <p className={`mt-2 text-sm ${muted}`}>
-              {confirmacion === 'eliminar'
-                ? 'Se eliminará la planilla abierta y se anularán los ingresos manuales. Las recepciones automáticas se conservarán.'
-                : 'El conteo quedará bloqueado y la diferencia se aplicará al stock. Esta acción no se puede deshacer desde esta pantalla.'}
+              El conteo quedará bloqueado y la diferencia se aplicará al stock. Esta acción no se puede deshacer desde esta pantalla.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => setConfirmacion(null)} className={secundario}>Cancelar</button>
@@ -714,9 +812,9 @@ export default function InventarioDiarioSucursal({ sucursalId, nombreSucursal, d
                 type="button"
                 onClick={confirmarAccion}
                 disabled={guardando || eliminando}
-                className={confirmacion === 'eliminar' ? 'inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50' : accion}
+                className={accion}
               >
-                {confirmacion === 'eliminar' ? 'Borrar planilla' : 'Cerrar y ajustar stock'}
+                Cerrar y ajustar stock
               </button>
             </div>
           </div>

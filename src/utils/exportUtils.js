@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // Exportar datos a Excel
 export const exportarAExcel = (datos, nombreArchivo) => {
@@ -16,7 +16,7 @@ export const exportarAPDF = (columnas, filas, titulo, nombreArchivo) => {
   doc.setFontSize(16);
   doc.text(titulo, 14, 15);
   
-  doc.autoTable({
+  autoTable(doc, {
     startY: 20,
     head: [columnas],
     body: filas,

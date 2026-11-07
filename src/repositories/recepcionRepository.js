@@ -7,8 +7,10 @@ import { proveedoresRepository } from './proveedoresRepository';
 // de planta no puede quedar en blanco: se listan los lotes igual, sin
 // las fotos. Al correr el SQL aparecen solas.
 const CAMPOS_RECEPCION_COMPLETO = `
+        id,
         numero_recibo,
         fecha,
+        creado_en,
         kilos,
         unidades,
         precio_por_kilo,
@@ -25,8 +27,10 @@ const CAMPOS_RECEPCION_COMPLETO = `
       `;
 
 const CAMPOS_RECEPCION_SIN_EVIDENCIA = `
+        id,
         numero_recibo,
         fecha,
+        creado_en,
         kilos,
         unidades,
         precio_por_kilo,
@@ -38,6 +42,11 @@ const CAMPOS_RECEPCION_SIN_EVIDENCIA = `
         proveedores ( nombre )
       `;
 
+const esTablaArchivoNoInstalada = (error) => (
+  ['42P01', 'PGRST205'].includes(error?.code)
+  || /does not exist|schema cache/i.test(error?.message || '')
+);
+
 export const recepcionRepository = {
   // Obtener lista de proveedores para el selector del formulario
   async obtenerProveedores() {
@@ -45,7 +54,7 @@ export const recepcionRepository = {
   },
 
   // Historial de recepciones, con la evidencia de cada lote
-  async obtenerRecepciones({ soloHoy = false } = {}) {
+  async obtenerHistorialRecepciones({ soloHoy = false, desde, hasta, archivadas = false } = {}) {
     const consultar = async (campos) => {
       let q = supabase
         .from('recepcion_pollo')
@@ -54,6 +63,8 @@ export const recepcionRepository = {
       if (soloHoy) {
         q = q.eq('fecha', new Date().toISOString().split('T')[0]);
       }
+      if (desde) q = q.gte('fecha', desde);
+      if (hasta) q = q.lte('fecha', hasta);
       return q;
     };
 
@@ -68,12 +79,53 @@ export const recepcionRepository = {
     }
 
     if (error) throw error;
-    return data;
+    if (!data?.length) {
+      const { error: errorArchivo } = await supabase
+        .from('recepciones_planta_archivadas')
+        .select('recepcion_id')
+        .limit(1);
+      if (errorArchivo && !esTablaArchivoNoInstalada(errorArchivo)) throw errorArchivo;
+      return { recepciones: [], archivoDisponible: !errorArchivo };
+    }
+
+    const { data: archivadasData, error: errorArchivo } = await supabase
+      .from('recepciones_planta_archivadas')
+      .select('recepcion_id')
+      .eq('archivado', true)
+      .in('recepcion_id', data.map((recepcion) => recepcion.id));
+    if (errorArchivo) {
+      if (!esTablaArchivoNoInstalada(errorArchivo)) throw errorArchivo;
+      return {
+        recepciones: archivadas ? [] : data.map((recepcion) => ({ ...recepcion, archivado: false })),
+        archivoDisponible: false,
+      };
+    }
+
+    const idsArchivados = new Set((archivadasData || []).map((registro) => registro.recepcion_id));
+    return {
+      recepciones: data
+        .filter((recepcion) => idsArchivados.has(recepcion.id) === archivadas)
+        .map((recepcion) => ({ ...recepcion, archivado: idsArchivados.has(recepcion.id) })),
+      archivoDisponible: true,
+    };
+  },
+
+  async obtenerRecepciones(opciones = {}) {
+    const resultado = await this.obtenerHistorialRecepciones(opciones);
+    return resultado.recepciones;
   },
 
   // Mantenido por compatibilidad con las llamadas viejas
   obtenerRecepcionesDelDia() {
     return this.obtenerRecepciones({ soloHoy: true });
+  },
+
+  async cambiarArchivoRecepcion({ recepcionId, archivada }) {
+    const { error } = await supabase.rpc('archivar_recepcion_planta', {
+      p_recepcion_id: Number(recepcionId),
+      p_archivar: archivada,
+    });
+    if (error) throw error;
   },
 
   // Registrar la llegada de un lote con foto y las dos firmas.
